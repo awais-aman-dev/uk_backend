@@ -1,0 +1,78 @@
+[project]
+name = "uk-backend"
+version = "0.1.0"
+description = "1Theory UK platform backend"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "django>=5.2,<6",
+    "django-environ>=0.12",
+    "django-cors-headers>=4.7",
+    "django-constance>=4.3",
+    "psycopg[binary]>=3.2",
+    "whitenoise>=6.9",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12",
+    "mypy>=1.17",
+    "django-stubs[compatible-mypy]>=5.2,<6",
+    "pytest>=8.4",
+    "pytest-django>=4.11",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 119
+target-version = "py312"
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "DJ",  # flake8-django
+    "S",   # flake8-bandit
+    "T20", # flake8-print
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use bare asserts, fixed dummy secrets and subprocess calls by design.
+"**/tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+"tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+# Local and test settings deliberately carry non-secret development keys.
+"config/settings/local.py" = ["S105"]
+"config/settings/test.py" = ["S105"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+exclude = ["/migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["environ.*", "constance.*", "corsheaders.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+testpaths = ["apps", "tests"]
+python_files = ["test_*.py", "tests.py"]
+addopts = "-ra --strict-markers"
