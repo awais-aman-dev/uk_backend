@@ -1,8 +1,15 @@
+from decimal import Decimal
+
 import pytest
 from django.contrib.auth.models import Group
+from django.utils import timezone
+from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.billing.models import Order, OrderStatus
+from apps.catalog.models import Package
 from apps.core.models import PublishStatus
+from apps.entitlements import services as entitlements
 from apps.learning.models import (
     Chapter,
     LearningContent,
@@ -125,3 +132,48 @@ def published_tree(chapter, subchapter, content, publisher):
     services.publish(actor=publisher, instance=content)
     content.refresh_from_db()
     return chapter, subchapter, content
+
+
+# --- The student side: a signed-in customer with a package -----------------------------------
+
+
+@pytest.fixture
+def api():
+    return APIClient()
+
+
+def sign_in(api, user):
+    """Authenticate the test client as ``user``. A helper, not a fixture, so it reads in place."""
+    api.force_authenticate(user=user)
+    return api
+
+
+@pytest.fixture
+def packages(db):
+    """Two packages, so a test can check that one package's material stays out of the other."""
+    return {
+        "starter": Package.objects.create(name="Starter", duration_days=7, price=Decimal("5.00")),
+        "premium": Package.objects.create(name="Premium", duration_days=30, price=Decimal("15.00")),
+    }
+
+
+@pytest.fixture
+def student(db, packages):
+    """Builds a customer who has bought a package and has live learning access."""
+
+    def buy(package_name="starter", paid_at=None):
+        package = packages[package_name]
+        user = User.objects.create_user(email=f"{package_name}@example.com", first_name="Sam")
+        order = Order.objects.create(
+            package=package,
+            email=user.email,
+            user=user,
+            status=OrderStatus.PAID,
+            paid_at=paid_at or timezone.now(),
+            original_price=package.price,
+            final_price=package.price,
+        )
+        entitlements.activate(order, user)
+        return user
+
+    return buy

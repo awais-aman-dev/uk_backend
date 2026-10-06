@@ -16,7 +16,7 @@ already implements, not Python conventions.
 from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
 
-from apps.learning.models import QuestionType, SignCategory
+from apps.learning.models import ExamKind, QuestionType, SignCategory
 
 
 class SignSerializer(serializers.Serializer):
@@ -285,3 +285,60 @@ class AnswerResponseSerializer(serializers.Serializer):
     )
     explanation = serializers.CharField(allow_blank=True)
     lesson = LinkSerializer(allow_null=True, help_text="Where to read more about this, when there is somewhere.")
+
+
+# --- Exams ---------------------------------------------------------------------------------------
+
+
+class ExamSummarySerializer(serializers.Serializer):
+    """An exam as it appears in the list: enough to choose one, not to sit it."""
+
+    slug = serializers.SlugField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    kind = serializers.ChoiceField(choices=ExamKind.choices)
+    questionCount = serializers.IntegerField(help_text="How many questions will be asked.")  # noqa: N815
+    passMark = serializers.IntegerField(help_text="How many must be right to pass.")  # noqa: N815
+    timeLimitSeconds = serializers.IntegerField(  # noqa: N815
+        allow_null=True, help_text="Null when the exam is untimed."
+    )
+
+
+class ExamListResponseSerializer(serializers.Serializer):
+    exams = ExamSummarySerializer(many=True)
+
+
+class ExamDetailResponseSerializer(serializers.Serializer):
+    """An exam to sit. The questions carry no answers; submit the sitting to have it marked."""
+
+    exam = ExamSummarySerializer()
+    questions = StudentQuestionSerializer(many=True, help_text="In the order staff arranged them.")
+    signs = SignMapField()
+
+
+class ExamSubmissionSerializer(serializers.Serializer):
+    """A finished sitting, posted to be marked."""
+
+    answers = serializers.DictField(
+        child=serializers.ListField(child=serializers.CharField()),
+        help_text='The option ids chosen for each question, keyed by the question\'s `id`, e.g. {"12": ["a"]}.',
+    )
+
+
+class ExamQuestionResultSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    key = serializers.SlugField()
+    correct = serializers.BooleanField()
+    selected = serializers.ListField(child=serializers.CharField(), help_text="Empty when it was left unanswered.")
+    correctIds = serializers.ListField(child=serializers.CharField())  # noqa: N815
+    explanation = serializers.CharField(allow_blank=True)
+
+
+class ExamResultResponseSerializer(serializers.Serializer):
+    """The marking for a whole sitting. Not stored: attempt history arrives with progress."""
+
+    score = serializers.IntegerField()
+    total = serializers.IntegerField()
+    passMark = serializers.IntegerField()  # noqa: N815
+    passed = serializers.BooleanField()
+    questions = ExamQuestionResultSerializer(many=True, help_text="Every question, answered or not.")

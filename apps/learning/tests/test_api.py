@@ -5,19 +5,15 @@ anything their package does not include must never appear, whatever the frontend
 """
 
 from datetime import timedelta
-from decimal import Decimal
 
 import pytest
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.billing.models import Order, OrderStatus
-from apps.catalog.models import Package
 from apps.core.models import PublishStatus
-from apps.entitlements import services as entitlements
 from apps.learning.models import Chapter, LearningContent, Subchapter
+from apps.learning.tests.conftest import sign_in
 
 pytestmark = pytest.mark.django_db
 
@@ -33,49 +29,9 @@ def lesson_url(slug: str) -> str:
 
 
 @pytest.fixture
-def api():
-    return APIClient()
-
-
-@pytest.fixture
-def packages(db):
-    return {
-        "starter": Package.objects.create(name="Starter", duration_days=7, price=Decimal("5.00")),
-        "premium": Package.objects.create(name="Premium", duration_days=30, price=Decimal("15.00")),
-    }
-
-
-@pytest.fixture
-def student(db, packages):
-    """Somebody on the Starter package, with live access."""
-
-    def buy(package_name="starter", paid_at=None):
-        package = packages[package_name]
-        user = User.objects.create_user(email=f"{package_name}@example.com", first_name="Sam")
-        order = Order.objects.create(
-            package=package,
-            email=user.email,
-            user=user,
-            status=OrderStatus.PAID,
-            paid_at=paid_at or timezone.now(),
-            original_price=package.price,
-            final_price=package.price,
-        )
-        entitlements.activate(order, user)
-        return user
-
-    return buy
-
-
-@pytest.fixture
 def live_tree(published_tree):
     """A published chapter, subchapter and one piece of material."""
     return published_tree
-
-
-def sign_in(api, user):
-    api.force_authenticate(user=user)
-    return api
 
 
 class TestTopics:

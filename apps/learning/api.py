@@ -23,12 +23,16 @@ from rest_framework.views import APIView
 from apps.accounts.models import User
 from apps.entitlements import services as entitlements
 from apps.learning import services
-from apps.learning.models import Chapter, Question, Sign, Subchapter
+from apps.learning.models import Chapter, ExamKind, PracticeExam, Question, Sign, Subchapter
 from apps.learning.serializers import (
     AnswerRequestSerializer,
     AnswerResponseSerializer,
     EbookChapterResponseSerializer,
     EbookListResponseSerializer,
+    ExamDetailResponseSerializer,
+    ExamListResponseSerializer,
+    ExamResultResponseSerializer,
+    ExamSubmissionSerializer,
     LessonDetailResponseSerializer,
     PracticeSetResponseSerializer,
     SignListResponseSerializer,
@@ -387,3 +391,125 @@ class AnswerView(APIView):
 
         # Marked on the server: the answer was never in the page for the student to read.
         return Response(services.mark_answer(question, [str(option) for option in selected]))
+
+
+def _exam_summary(exam: PracticeExam, question_count: int) -> dict:
+    return {
+        "slug": exam.slug,
+        "title": exam.title,
+        "description": exam.description,
+        "kind": exam.kind,
+        "questionCount": question_count,
+        "passMark": exam.pass_mark,
+        "timeLimitSeconds": exam.time_limit_seconds,
+    }
+
+
+def _wholly_included(student, exam: PracticeExam) -> tuple[bool, list]:
+    """Whether the student's package covers every question in the exam, and those questions.
+
+    An exam is all-or-nothing. Serving a shortened version would make its pass mark unreachable,
+    and leaving the shortened version out of the response would leak which chapters a dearer
+    package contains, so an exam a student is not entitled to in full is simply not offered.
+    """
+    asked = list(services.questions_in_exam(exam))
+    included = entitlements.visible_questions(student, services.questions_in_exam(exam)).count()
+    return len(asked) == included, asked
+
+
+class ExamListView(APIView):
+    """The practice exams and mock tests on offer."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="listExams",
+        summary="List the practice exams and mock tests",
+        parameters=[
+            OpenApiParameter(
+                "kind", str, OpenApiParameter.QUERY, enum=[kind for kind, _ in ExamKind.choices], required=False
+            )
+        ],
+        responses={200: ExamListResponseSerializer},
+    )
+    def get(self, request: Request) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        exams = services.live(PracticeExam.objects.all()).order_by("order", "title")
+        kind = request.query_params.get("kind")
+        if kind:
+            exams = exams.filter(kind=kind)
+
+        listed = []
+        for exam in exams:
+            included, asked = _wholly_included(student, exam)
+            if included:
+                listed.append(_exam_summary(exam, len(asked)))
+
+        return Response({"exams": listed})
+
+
+class ExamDetailView(APIView):
+    """One exam to sit: its questions in order, without their answers."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="getExam",
+        summary="Start an exam",
+        responses={200: ExamDetailResponseSerializer},
+    )
+    def get(self, request: Request, slug: str) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        exam = services.live(PracticeExam.objects.all()).filter(slug=slug).first()
+        if exam is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        included, asked = _wholly_included(student, exam)
+        if not included:
+            return plan_needed()
+
+        return Response(
+            {
+                "exam": _exam_summary(exam, len(asked)),
+                "questions": [services.student_view_of_question(question) for question in asked],
+                "signs": sign_map(_sign_codes_in(asked)),
+            }
+        )
+
+
+class ExamSubmitView(APIView):
+    """Mark a finished sitting."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="submitExam",
+        summary="Submit an exam to be marked",
+        request=ExamSubmissionSerializer,
+        responses={200: ExamResultResponseSerializer},
+    )
+    def post(self, request: Request, slug: str) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        exam = services.live(PracticeExam.objects.all()).filter(slug=slug).first()
+        if exam is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        included, _ = _wholly_included(student, exam)
+        if not included:
+            return plan_needed()
+
+        submission = ExamSubmissionSerializer(data=request.data)
+        submission.is_valid(raise_exception=True)
+
+        # Marked on the server against every question the exam asks, so a sitting cannot be
+        # passed by sending back fewer answers than there were questions.
+        return Response(services.mark_exam(exam, submission.validated_data["answers"]))

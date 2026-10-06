@@ -11,4 +11,7 @@ urlpatterns = [
     path("learn/signs/", api.SignListView.as_view(), name="learn-signs"),
     path("learn/practice/", api.PracticeSetView.as_view(), name="learn-practice"),
     path("learn/answer/", api.AnswerView.as_view(), name="learn-answer"),
+    path("learn/exams/", api.ExamListView.as_view(), name="learn-exams"),
+    path("learn/exams/<slug:slug>/", api.ExamDetailView.as_view(), name="learn-exam"),
+    path("learn/exams/<slug:slug>/submit/", api.ExamSubmitView.as_view(), name="learn-exam-submit"),
 ]

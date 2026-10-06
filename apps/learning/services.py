@@ -343,6 +343,53 @@ def student_view_of_question(question: Question) -> dict:
     }
 
 
+def questions_in_exam(exam: PracticeExam, at=None):
+    """The exam's published questions, in the order staff put them in.
+
+    Drafts are left out rather than shown unanswerable, which is also why an exam cannot be
+    published while any of its questions is still a draft — see :func:`problems_with_exam`.
+    """
+    return live(
+        Question.objects.filter(exam_places__exam=exam).select_related("chapter").prefetch_related("options"),
+        at=at,
+    ).order_by("exam_places__order")
+
+
+def mark_exam(exam: PracticeExam, answers: dict[str, list[str]]) -> dict:
+    """Score a whole sitting, which is the only place a pass or fail is decided.
+
+    ``answers`` maps a question id to the option ids chosen for it. Anything not answered counts
+    as wrong, so a student cannot improve a score by leaving questions out, and unknown ids are
+    ignored rather than rejected: a question unpublished mid-sitting should not void the attempt.
+    """
+    results = []
+    score = 0
+
+    for question in questions_in_exam(exam):
+        chosen = answers.get(str(question.pk)) or []
+        correct_ids = question.correct_option_ids
+        correct = sorted(chosen) == sorted(correct_ids)
+        score += correct
+        results.append(
+            {
+                "id": question.pk,
+                "key": question.key,
+                "correct": correct,
+                "selected": chosen,
+                "correctIds": correct_ids,
+                "explanation": question.explanation,
+            }
+        )
+
+    return {
+        "score": score,
+        "total": len(results),
+        "passMark": exam.pass_mark,
+        "passed": score >= exam.pass_mark,
+        "questions": results,
+    }
+
+
 def mark_answer(question: Question, selected: list[str]) -> dict:
     """Mark an answer, which is the only place correctness is decided.
 
