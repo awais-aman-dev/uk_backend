@@ -1,0 +1,1538 @@
+openapi: 3.1.0
+info:
+  title: 1Theory — learner-facing API
+  version: 1.0.0
+  summary: The API the 1Theory frontend (landing, student account, learning area) talks to today.
+  description: |
+    This is the contract of the **working** API behind the 1Theory frontend
+    (Nuxt, live at https://1theory-demo.vercel.app). It covers everything the frontend calls:
+    sign-up / login, the student account, orders and checkout, and the learning area.
+    Staff tools (`/api/admin/*` — CRM and content editing) are **not** included: they move to Django Admin.
+
+    Implementing these paths and shapes in Django lets the frontend switch over with no changes.
+    Every response below has been checked against the live API (see "How this spec was verified").
+
+    ## Conventions
+    - **JSON everywhere**, `camelCase` keys. Timestamps are ISO 8601 UTC strings (`2026-10-06T08:24:00.000Z`).
+    - **Calendar days** (`YYYY-MM-DD`: test date, activity calendar, streak) are **UK days** (Europe/London).
+    - **Money is integer pence**, currency `GBP` (`1500` = £15). Prices always come from the server's
+      plan catalogue — an amount sent by the client is ignored.
+    - IDs are integers; content is addressed by `slug` (lessons, chapters, clips) or `key` (questions).
+
+    ## Auth
+    - Session in an **httpOnly cookie** (`theory_session`, `SameSite=Lax`, `Secure`, 30 days, sliding).
+      `POST /api/auth/register` and `POST /api/auth/login` set it; `POST /api/auth/logout` clears it.
+      The frontend never reads the token — it just sends cookies (`credentials: 'include'`, same origin).
+    - For Django: session auth works as-is if the frontend and API share a domain (or Nuxt proxies `/api` to Django).
+      If you add CSRF protection, tell the frontend the header name (e.g. `X-CSRFToken`) and it will send it.
+    - **401** = not signed in. **403** = signed in but not allowed. **402** = signed in, but the plan has ended
+      (paid learning content is locked; the UI shows "Unlock").
+
+    ## Errors
+    Every error has the same body: `statusCode`, `statusMessage`, and for form errors
+    `data.fieldErrors` — a map **field → first message** (`{"email": "An account with this email already exists"}`),
+    or the key `form` for a message about the whole form. The forms show these next to the inputs as they are.
+    Validation failures are **422**.
+
+    ## Access rules (enforced on the server)
+    - Learning content needs an active plan (`subscriptions.ends_at > now`); staff always have access.
+    - Answers are never sent before the learner commits: questions come without `correct`, mock tests reveal
+      answers only after submit, hazard windows only after the attempt is scored.
+    - Someone else's order / mock attempt is **404** (never confirm it exists).
+    - Plans: `weekly` £5 / 7 days, `monthly` £15 / 30 days, `quarterly` £25 / 90 days. Buying while access is
+      active **stacks** onto its end.
+
+    ## Payments
+    Today checkout is a **demo page** with four outcome buttons (`POST /api/orders/{id}/pay`).
+    For Stripe test mode, see `POST /api/orders/{id}/checkout` (proposed) and the webhook note there —
+    the order statuses and `order_events` log stay the same.
+
+    ## How this spec was verified
+    A script calls every operation on a running server and validates each response body against the schemas here.
+servers:
+  - url: https://1theory-demo.vercel.app
+    description: Live demo (Nuxt API)
+  - url: http://localhost:3000
+    description: Local
+tags:
+  - name: Auth
+    description: Sign-up, login and the session cookie
+  - name: Account
+    description: The student account page
+  - name: Orders
+    description: Plans, orders and checkout
+  - name: Learn
+    description: Learning area (paid content returns 402 without an active plan)
+  - name: Practice
+    description: Practice questions, answer checking, bookmarks
+  - name: Mock test
+    description: Timed mock tests (answers only after submit)
+  - name: Hazard perception
+    description: Clips scored 5…1 per hazard on the server
+  - name: E-book
+    description: Highway Code e-book reader and PDF
+  - name: Public
+    description: No sign-in needed
+
+security:
+  - session: []
+
+paths:
+  /api/auth/register:
+    post:
+      operationId: register
+      tags: [Auth]
+      summary: Create an account (optionally with a pending order for a plan) and sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterInput' }
+      responses:
+        '200':
+          description: Signed in. `orderId` is the pending order when a plan was chosen — next step is checkout.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, orderId]
+                properties:
+                  user: { $ref: '#/components/schemas/SessionUser' }
+                  orderId: { type: [integer, 'null'] }
+        '409': { $ref: '#/components/responses/EmailTaken' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginInput' }
+      responses:
+        '200':
+          description: Signed in
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/SessionUser' }
+        '401':
+          description: 'Unknown email (`fieldErrors.email`) or wrong password (`fieldErrors.password`)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Account disabled (`fieldErrors.form`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Sign out (the session row is kept as history; the cookie is cleared)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/auth/me:
+    get:
+      operationId: getMe
+      tags: [Auth]
+      summary: Who is signed in (`user` is null when signed out — never 401)
+      security: []
+      responses:
+        '200':
+          description: Current user or null
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    oneOf:
+                      - { $ref: '#/components/schemas/SessionUser' }
+                      - { type: 'null' }
+
+  /api/auth/ping:
+    post:
+      operationId: ping
+      tags: [Auth]
+      summary: Heartbeat from an open, visible tab (once a minute) — keeps visit duration accurate for the CRM
+      responses:
+        '204': { description: Recorded }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/welcome/{token}:
+    get:
+      operationId: getWelcomeLink
+      tags: [Auth]
+      summary: (Optional) What a staff-sent sign-in / payment link is for
+      description: Links are created by staff (in the CRM) for phone sales. One-time, valid 7 days.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Link is usable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [firstName, email, order]
+                properties:
+                  firstName: { type: string }
+                  email: { type: string, format: email }
+                  order:
+                    oneOf:
+                      - type: object
+                        required: [id, plan, pence, days]
+                        properties:
+                          id: { type: integer }
+                          plan: { type: string, description: Plan display name }
+                          pence: { type: integer }
+                          days: { type: integer }
+                      - { type: 'null' }
+        '410': { $ref: '#/components/responses/LinkGone' }
+
+  /api/auth/welcome:
+    post:
+      operationId: useWelcomeLink
+      tags: [Auth]
+      summary: (Optional) Use a staff-sent link — set a password and sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string, minLength: 20, maxLength: 80 }
+                password: { $ref: '#/components/schemas/Password' }
+      responses:
+        '200':
+          description: Signed in; `next` is where to go (the order's checkout, or /account)
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SessionCookie' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, next]
+                properties:
+                  user: { $ref: '#/components/schemas/SessionUser' }
+                  next: { type: string, examples: ['/demo-checkout?order=1034'] }
+        '410': { $ref: '#/components/responses/LinkGone' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/account:
+    get:
+      operationId: getAccount
+      tags: [Account]
+      summary: The student account — current access and order history
+      responses:
+        '200':
+          description: Account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subscription, orders]
+                properties:
+                  subscription:
+                    description: Current access (the period that ends last), or null if never bought
+                    oneOf:
+                      - { $ref: '#/components/schemas/Subscription' }
+                      - { type: 'null' }
+                  orders:
+                    type: array
+                    description: Newest first
+                    items: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/orders:
+    post:
+      operationId: createOrder
+      tags: [Orders]
+      summary: Start a new order for a plan (renewal, "Try again" after a failed payment)
+      description: The price comes from the plan catalogue; any amount in the body is ignored. Order starts `pending`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan: { $ref: '#/components/schemas/PlanId' }
+      responses:
+        '200':
+          description: Pending order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [Orders]
+      summary: One of my orders (for the checkout page)
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/orders/{id}/pay:
+    post:
+      operationId: payOrderDemo
+      tags: [Orders]
+      summary: Demo checkout — the learner picks what the "payment provider" says
+      description: |
+        Moves a **pending** order of the signed-in user to a final status, logs it in `order_events`, and on
+        `paid` grants access for the plan's days (stacked onto current access). Anything but a pending order → 409.
+        | outcome | order status | frontend goes to |
+        |---|---|---|
+        | `paid` | `paid` | /account + "Payment successful!" |
+        | `declined` | `failed` | "Payment didn't go through" + Try again (new order) |
+        | `cancelled` | `cancelled` | back to pricing |
+        | `expired` | `expired` | "Payment session expired" + Start again (new order) |
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [paid, declined, cancelled, expired] }
+      responses:
+        '200':
+          description: Order updated; `subscription` is the new access when paid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order, subscription]
+                properties:
+                  order: { $ref: '#/components/schemas/Order' }
+                  subscription:
+                    oneOf:
+                      - { $ref: '#/components/schemas/Subscription' }
+                      - { type: 'null' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The order is no longer pending (`statusMessage` says its status)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/orders/{id}/checkout:
+    post:
+      operationId: createStripeCheckout
+      tags: [Orders]
+      summary: (Proposed — Stripe test mode) Create a Stripe Checkout Session for a pending order
+      x-status: proposed
+      description: |
+        Replaces the demo page when Stripe is used. Not implemented in the current API.
+        - Server creates a Stripe Checkout Session for the order's amount (from the plan catalogue),
+          `metadata.order_id`, `success_url=/account?paid=1`, `cancel_url=/#pricing`; returns its URL.
+        - Frontend redirects to `url`.
+        - **Webhook** `POST /api/stripe/webhook` (server-to-server, signature-checked, idempotent):
+          `checkout.session.completed` → order `paid` + grant access; `checkout.session.expired` → `expired`;
+          `payment_intent.payment_failed` → `failed`. Same `order_events` log as today.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Redirect target
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url]
+                properties:
+                  url: { type: string, format: uri }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Order is not pending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/contact:
+    post:
+      operationId: sendContactMessage
+      tags: [Public]
+      summary: Contact form (shown to staff in the CRM)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, topic, message]
+              properties:
+                name: { $ref: '#/components/schemas/Name' }
+                email: { $ref: '#/components/schemas/Email' }
+                topic: { type: string, enum: [general, account, billing, technical] }
+                message: { type: string, minLength: 10, maxLength: 2000 }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/demo/hazard:
+    get:
+      operationId: getDemoClip
+      tags: [Public]
+      summary: The free hazard clip on the landing page (hazard windows withheld)
+      security: []
+      responses:
+        '200':
+          description: Clip
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clip, signs]
+                properties:
+                  clip: { $ref: '#/components/schemas/HazardClip' }
+                  signs: { $ref: '#/components/schemas/SignMap' }
+    post:
+      operationId: scoreDemoClip
+      tags: [Public]
+      summary: Score a landing-page attempt (same rules as paid clips; nothing is stored)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HazardClicks' }
+      responses:
+        '200':
+          description: Score and the revealed hazard windows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HazardResult' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/learn/overview:
+    get:
+      operationId: getToday
+      tags: [Learn]
+      summary: Everything the "Today" screen needs in one call
+      description: |
+        Readiness rings, streak and week, daily goal, test date, next lesson, weak topics, plus the coach:
+        spaced-repetition queue size, pass prediction and today's plan. Works without an active plan
+        (`hasAccess: false` → the UI shows locks).
+      responses:
+        '200':
+          description: Today
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Overview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/learn/topics:
+    get:
+      operationId: listTopics
+      tags: [Learn]
+      summary: Catalogue — topics with their lessons (titles only; visible without a plan)
+      responses:
+        '200':
+          description: Topics in order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [topics]
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      type: object
+                      required: [slug, title, description, icon, mastery, questions, lessons]
+                      properties:
+                        slug: { type: string }
+                        title: { type: string }
+                        description: { type: string }
+                        icon: { type: string }
+                        mastery: { $ref: '#/components/schemas/Percent' }
+                        questions: { type: integer, description: Published questions in this topic }
+                        lessons:
+                          type: array
+                          items:
+                            type: object
+                            required: [slug, title, summary, minutes, done]
+                            properties:
+                              slug: { type: string }
+                              title: { type: string }
+                              summary: { type: string }
+                              minutes: { type: integer }
+                              done: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/learn/lessons/{slug}:
+    get:
+      operationId: getLesson
+      tags: [Learn]
+      summary: A lesson with everything its blocks refer to (signs, check questions, scene clips)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Lesson
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lesson, topic, done, prev, next, signs, questions, clips]
+                properties:
+                  lesson:
+                    type: object
+                    required: [slug, title, summary, minutes, blocks]
+                    properties:
+                      slug: { type: string }
+                      title: { type: string }
+                      summary: { type: string }
+                      minutes: { type: integer }
+                      blocks: { type: array, items: { $ref: '#/components/schemas/Block' } }
+                  topic:
+                    type: object
+                    required: [slug, title, icon]
+                    properties:
+                      slug: { type: string }
+                      title: { type: string }
+                      icon: { type: string }
+                  done: { type: boolean }
+                  prev: { $ref: '#/components/schemas/LinkOrNull' }
+                  next: { $ref: '#/components/schemas/LinkOrNull' }
+                  signs: { $ref: '#/components/schemas/SignMap' }
+                  questions:
+                    type: object
+                    description: Check questions by question key
+                    additionalProperties: { $ref: '#/components/schemas/Question' }
+                  clips:
+                    type: object
+                    description: Scene clips by slug
+                    additionalProperties: { $ref: '#/components/schemas/HazardClip' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/learn/lessons/{slug}/complete:
+    post:
+      operationId: completeLesson
+      tags: [Learn]
+      summary: Mark a lesson as done (idempotent)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/learn/practice:
+    get:
+      operationId: getPracticeSet
+      tags: [Practice]
+      summary: A practice set (questions without answers)
+      parameters:
+        - name: mode
+          in: query
+          schema: { type: string, enum: [random, topic, mistakes, weak, saved, review], default: random }
+          description: |
+            `topic` (with `topic`), `mistakes` (last attempt was wrong), `weak` (4 lowest-mastery topics),
+            `saved` (bookmarked), `review` (spaced repetition — due questions, shakiest first, not shuffled).
+        - { name: topic, in: query, schema: { type: string }, description: Topic slug when mode = topic }
+        - { name: count, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200':
+          description: Questions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [questions, signs, saved]
+                properties:
+                  questions: { type: array, items: { $ref: '#/components/schemas/Question' } }
+                  signs: { $ref: '#/components/schemas/SignMap' }
+                  saved: { type: array, items: { type: string }, description: Bookmarked question keys }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/learn/answer:
+    post:
+      operationId: checkAnswer
+      tags: [Practice]
+      summary: Check an answer (practice or a lesson's check question) — reveals the answer
+      description: 409 if the question is part of the learner's mock test that is still running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questionId, selected, mode]
+              properties:
+                questionId: { type: integer }
+                selected: { type: array, items: { type: string, maxLength: 4 }, minItems: 1, maxItems: 4, description: Option ids }
+                mode: { type: string, enum: [practice, lesson] }
+      responses:
+        '200':
+          description: Result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnswerResult' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Question is in a running mock test
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/learn/bookmarks:
+    post:
+      operationId: setBookmark
+      tags: [Practice]
+      summary: Save / unsave (questions are bookmarked by key)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, ref, on]
+              properties:
+                kind: { type: string, enum: [question, lesson, sign, chapter] }
+                ref: { type: string, minLength: 1, maxLength: 80 }
+                on: { type: boolean }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+
+  /api/learn/settings:
+    patch:
+      operationId: updateLearnerSettings
+      tags: [Learn]
+      summary: Test date and daily goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                testDate: { type: [string, 'null'], pattern: '^\d{4}-\d{2}-\d{2}$', description: UK day; null clears it }
+                dailyGoal: { type: integer, minimum: 5, maximum: 100 }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/learn/progress:
+    get:
+      operationId: getProgress
+      tags: [Learn]
+      summary: Progress screen — readiness, prediction, memory, 12-week activity calendar, totals
+      responses:
+        '200':
+          description: Progress
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [readiness, prediction, review, streak, calendar, answered, accuracy, lessonsDone, visits, studyMinutes, weekMinutes]
+                properties:
+                  readiness: { $ref: '#/components/schemas/Readiness' }
+                  prediction: { $ref: '#/components/schemas/Prediction' }
+                  review: { $ref: '#/components/schemas/ReviewStats' }
+                  streak: { type: integer, description: Days in a row with learning activity }
+                  calendar:
+                    type: array
+                    description: Last 84 UK days, oldest first
+                    items: { $ref: '#/components/schemas/DayCount' }
+                  answered: { type: integer }
+                  accuracy: { $ref: '#/components/schemas/Percent' }
+                  lessonsDone: { type: integer }
+                  visits: { type: integer }
+                  studyMinutes: { type: integer }
+                  weekMinutes: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/learn/search:
+    get:
+      operationId: search
+      tags: [Learn]
+      summary: ⌘K search across lessons, topics, signs, e-book chapters and questions
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 60 }, description: 'Fewer than 2 characters → no results' }
+      responses:
+        '200':
+          description: Results (ready to render — `to` is the frontend route)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, icon, title, sub, to]
+                      properties:
+                        kind: { type: string, enum: [Lesson, Topic, Sign, Highway Code, Question] }
+                        icon: { type: string }
+                        title: { type: string }
+                        sub: { type: string }
+                        to: { type: string }
+                        sign: { $ref: '#/components/schemas/SignSpec' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/learn/signs:
+    get:
+      operationId: listSigns
+      tags: [Learn]
+      summary: Road signs (drawn on the frontend from `spec`)
+      responses:
+        '200':
+          description: Signs in order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signs]
+                properties:
+                  signs: { type: array, items: { $ref: '#/components/schemas/Sign' } }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+
+  /api/learn/mock:
+    get:
+      operationId: listMockAttempts
+      tags: [Mock test]
+      summary: Mock test rules and my last 20 attempts
+      responses:
+        '200':
+          description: Rules + attempts (newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pass, minutes, questions, attempts]
+                properties:
+                  pass: { type: integer, description: Pass mark for a standard attempt (86% of questions) }
+                  minutes: { type: integer }
+                  questions: { type: integer }
+                  attempts:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, status, score, total, passed, startedAt, finishedAt]
+                      properties:
+                        id: { type: integer }
+                        status: { type: string, enum: [in_progress, finished] }
+                        score: { type: [integer, 'null'] }
+                        total: { type: integer }
+                        passed: { type: boolean }
+                        startedAt: { type: string, format: date-time }
+                        finishedAt: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: startMockTest
+      tags: [Mock test]
+      summary: Start a mock test — 7 random questions + 3 from a case study, 12 minutes
+      responses:
+        '200':
+          description: New attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: integer }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+
+  /api/learn/mock/{id}:
+    get:
+      operationId: getMockAttempt
+      tags: [Mock test]
+      summary: An attempt — questions without answers while running; full review once finished
+      description: A running attempt past its deadline is finished (graded) on read.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Attempt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MockAttempt' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: saveMockAnswers
+      tags: [Mock test]
+      summary: Autosave answers and flags while the clock runs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answers:
+                  type: object
+                  description: question id (as string) → selected option ids; merged into what's saved
+                  additionalProperties: { type: array, items: { type: string, maxLength: 4 }, maxItems: 4 }
+                flagged: { type: array, items: { type: integer }, maxItems: 60 }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The test has ended (finished or past the deadline)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/learn/mock/{id}/finish:
+    post:
+      operationId: finishMockTest
+      tags: [Mock test]
+      summary: Submit and grade (safe to call twice)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Graded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, score]
+                properties:
+                  id: { type: integer }
+                  score: { type: [integer, 'null'] }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/learn/hazard:
+    get:
+      operationId: listHazardClips
+      tags: [Hazard perception]
+      summary: Clip list with my best scores (`scene` only with an active plan, for previews)
+      responses:
+        '200':
+          description: Clips in order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clips, signs]
+                properties:
+                  clips:
+                    type: array
+                    items:
+                      type: object
+                      required: [slug, title, description, durationMs, lighting, hazardCount, maxScore, best, tries, scene]
+                      properties:
+                        slug: { type: string }
+                        title: { type: string }
+                        description: { type: string }
+                        durationMs: { type: integer }
+                        lighting: { type: string, enum: [day, dusk, night] }
+                        hazardCount: { type: integer }
+                        maxScore: { type: integer }
+                        best: { type: [integer, 'null'] }
+                        tries: { type: integer }
+                        scene:
+                          oneOf:
+                            - { $ref: '#/components/schemas/HazardScene' }
+                            - { type: 'null' }
+                  signs: { $ref: '#/components/schemas/SignMap' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/learn/hazard/{slug}:
+    get:
+      operationId: getHazardClip
+      tags: [Hazard perception]
+      summary: A clip to play (hazard windows withheld until scored)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Clip
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clip, signs, index, total, next]
+                properties:
+                  clip: { $ref: '#/components/schemas/HazardClip' }
+                  signs: { $ref: '#/components/schemas/SignMap' }
+                  index: { type: integer, description: Position among published clips (0-based) }
+                  total: { type: integer }
+                  next: { type: [string, 'null'], description: Next clip slug }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/learn/hazard/{slug}/attempt:
+    post:
+      operationId: scoreHazardAttempt
+      tags: [Hazard perception]
+      summary: Score an attempt — the server grades the clicks (5…1 per hazard) and stores the attempt
+      description: |
+        Earliest click inside a window counts; earlier = more points. More than 15 clicks, or 4 clicks within
+        1.2 s, is a cheating pattern → the whole clip scores 0 (`flagged: true`), like the real test.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HazardClicks' }
+      responses:
+        '200':
+          description: Score and the revealed hazard windows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HazardResult' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /api/learn/ebook:
+    get:
+      operationId: listChapters
+      tags: [E-book]
+      summary: Chapters (table of contents) with read state and where I left off
+      responses:
+        '200':
+          description: Chapters
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chapters, current]
+                properties:
+                  chapters:
+                    type: array
+                    items:
+                      type: object
+                      required: [slug, title, summary, number, read]
+                      properties:
+                        slug: { type: string }
+                        title: { type: string }
+                        summary: { type: string }
+                        number: { type: integer }
+                        read: { type: boolean }
+                  current: { type: [string, 'null'], description: Slug of the last opened chapter }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/learn/ebook/{slug}:
+    get:
+      operationId: getChapter
+      tags: [E-book]
+      summary: A chapter (also remembers it as the reading position)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Chapter
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chapter, toc, prev, next, signs, questions, clips]
+                properties:
+                  chapter:
+                    type: object
+                    required: [slug, title, summary, blocks, number]
+                    properties:
+                      slug: { type: string }
+                      title: { type: string }
+                      summary: { type: string }
+                      number: { type: integer }
+                      blocks: { type: array, items: { $ref: '#/components/schemas/Block' } }
+                  toc:
+                    type: array
+                    items:
+                      type: object
+                      required: [slug, title, number]
+                      properties:
+                        slug: { type: string }
+                        title: { type: string }
+                        number: { type: integer }
+                  prev: { $ref: '#/components/schemas/LinkOrNull' }
+                  next: { $ref: '#/components/schemas/LinkOrNull' }
+                  signs: { $ref: '#/components/schemas/SignMap' }
+                  questions: { type: object, additionalProperties: { $ref: '#/components/schemas/Question' } }
+                  clips: { type: object, additionalProperties: { $ref: '#/components/schemas/HazardClip' } }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/learn/ebook/{slug}/read:
+    post:
+      operationId: markChapterRead
+      tags: [E-book]
+      summary: Mark a chapter as read
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+
+  /api/learn/ebook.pdf:
+    get:
+      operationId: downloadEbookPdf
+      tags: [E-book]
+      summary: The whole e-book as a PDF (generated from the same chapters)
+      responses:
+        '200':
+          description: PDF download
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '402': { $ref: '#/components/responses/PlanNeeded' }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: theory_session
+      description: httpOnly session cookie set by register / login (30 days, sliding).
+
+  headers:
+    SessionCookie:
+      description: '`theory_session=<token>; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`'
+      schema: { type: string }
+
+  parameters:
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    Ok:
+      description: Done
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties:
+              ok: { const: true }
+    Unauthorized:
+      description: Not signed in
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PlanNeeded:
+      description: Signed in, but the plan has ended — paid content is locked (`statusMessage` "An active plan is needed for this")
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found (or not yours)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Invalid:
+      description: Validation failed — `data.fieldErrors` has a message per field
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    EmailTaken:
+      description: '`fieldErrors.email`: "An account with this email already exists"'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    LinkGone:
+      description: Link expired, already used or unknown
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [statusCode, statusMessage]
+      properties:
+        statusCode: { type: integer }
+        statusMessage: { type: string }
+        message: { type: string }
+        data:
+          type: object
+          properties:
+            fieldErrors:
+              type: object
+              description: field → first message; key `form` = about the whole form
+              additionalProperties: { type: string }
+      examples:
+        - statusCode: 422
+          statusMessage: Please check the form
+          data: { fieldErrors: { email: 'Enter a valid email address, like name@example.com' } }
+
+    # ---------- Auth & account ----------
+    Name: { type: string, minLength: 2, maxLength: 60, description: Trimmed }
+    Email: { type: string, format: email, maxLength: 254, description: Trimmed and lower-cased by the server }
+    Password:
+      type: string
+      minLength: 8
+      maxLength: 128
+      description: At least one letter and one number
+    RegisterInput:
+      type: object
+      required: [name, email, password, terms]
+      properties:
+        name: { $ref: '#/components/schemas/Name' }
+        email: { $ref: '#/components/schemas/Email' }
+        password: { $ref: '#/components/schemas/Password' }
+        terms: { const: true }
+        plan: { $ref: '#/components/schemas/PlanId' }
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { $ref: '#/components/schemas/Email' }
+        password: { type: string, minLength: 1, maxLength: 128 }
+    SessionUser:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [learner, manager, admin] }
+    PlanId:
+      type: string
+      enum: [weekly, monthly, quarterly]
+      description: weekly £5 / 7 days · monthly £15 / 30 days · quarterly £25 / 90 days
+    Order:
+      type: object
+      required: [id, type, item, itemName, days, amountPence, currency, status, createdAt]
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [plan, addon] }
+        item: { type: string, description: Plan id (or add-on id) }
+        itemName: { type: string }
+        days: { type: [integer, 'null'] }
+        amountPence: { type: integer }
+        currency: { type: string, const: GBP }
+        status: { type: string, enum: [pending, paid, failed, cancelled, expired, refunded] }
+        createdAt: { type: string, format: date-time }
+    Subscription:
+      type: object
+      required: [plan, planName, startsAt, endsAt, daysLeft, state]
+      properties:
+        plan: { $ref: '#/components/schemas/PlanId' }
+        planName: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        daysLeft: { type: integer, minimum: 0 }
+        state: { type: string, enum: [active, ends_soon, expired], description: ends_soon = 3 days or less }
+
+    # ---------- Learning: shared ----------
+    Percent: { type: integer, minimum: 0, maximum: 100 }
+    DayCount:
+      type: object
+      required: [day, n]
+      properties:
+        day: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        n: { type: integer }
+    LinkOrNull:
+      oneOf:
+        - type: object
+          required: [slug, title]
+          properties:
+            slug: { type: string }
+            title: { type: string }
+        - { type: 'null' }
+    Readiness:
+      type: object
+      required: [overall, theory, mock, hazard]
+      properties:
+        overall: { $ref: '#/components/schemas/Percent' }
+        theory: { $ref: '#/components/schemas/Percent' }
+        mock: { $ref: '#/components/schemas/Percent' }
+        hazard: { $ref: '#/components/schemas/Percent' }
+    Prediction:
+      type: object
+      required: [percent, theory, hazard, confidence, ready, tip]
+      description: Chance to pass both parts of the real test (theory 86%, hazard 59%) from accuracy, mocks and clips
+      properties:
+        percent: { $ref: '#/components/schemas/Percent' }
+        theory: { $ref: '#/components/schemas/Percent' }
+        hazard: { $ref: '#/components/schemas/Percent' }
+        confidence: { type: string, enum: [low, ok] }
+        ready: { type: boolean, description: '"Ready to book": ≥ 80%, ≥ 2 mocks, ≥ 3 clips tried' }
+        tip: { type: string }
+    ReviewStats:
+      type: object
+      required: [due, learned, seen]
+      properties:
+        due: { type: integer, description: Questions due for spaced-repetition review now }
+        learned: { type: integer, description: Answered right 3+ times in a row }
+        seen: { type: integer }
+    Overview:
+      type: object
+      required: [hasAccess, subscription, readiness, streak, week, goal, testDate, nextLesson, lessonsDone, lessonsTotal, resumeMock, weakTopics, topics, review, prediction, plan]
+      properties:
+        hasAccess: { type: boolean }
+        subscription:
+          oneOf:
+            - { $ref: '#/components/schemas/Subscription' }
+            - { type: 'null' }
+        readiness: { $ref: '#/components/schemas/Readiness' }
+        streak: { type: integer }
+        week: { type: array, description: 'Last 7 UK days, oldest first', items: { $ref: '#/components/schemas/DayCount' } }
+        goal:
+          type: object
+          required: [done, target]
+          properties:
+            done: { type: integer, description: Questions answered today }
+            target: { type: integer }
+        testDate: { type: [string, 'null'], pattern: '^\d{4}-\d{2}-\d{2}$' }
+        nextLesson:
+          oneOf:
+            - type: object
+              required: [id, slug, title, minutes, topicId, topic]
+              properties:
+                id: { type: integer }
+                slug: { type: string }
+                title: { type: string }
+                minutes: { type: integer }
+                topicId: { type: integer }
+                topic: { type: string, description: Topic title }
+            - { type: 'null' }
+        lessonsDone: { type: integer }
+        lessonsTotal: { type: integer }
+        resumeMock: { type: [integer, 'null'], description: Id of a mock test still in progress }
+        weakTopics: { type: array, maxItems: 3, items: { $ref: '#/components/schemas/TopicStat' } }
+        topics: { type: array, items: { $ref: '#/components/schemas/TopicStat' } }
+        review: { $ref: '#/components/schemas/ReviewStats' }
+        prediction: { $ref: '#/components/schemas/Prediction' }
+        plan:
+          type: object
+          required: [daysLeft, items, minutesLeft, pace]
+          description: Today's plan — what's left spread over the days to the test (or a 2-week pace without a date)
+          properties:
+            daysLeft: { type: [integer, 'null'] }
+            minutesLeft: { type: integer }
+            pace: { type: string, enum: [on-track, tight, no-date] }
+            items:
+              type: array
+              items:
+                type: object
+                required: [key, label, detail, to, minutes, done]
+                properties:
+                  key: { type: string, enum: [lesson, review, practice, mock, hazard] }
+                  label: { type: string }
+                  detail: { type: string }
+                  to: { type: string, description: Frontend route }
+                  minutes: { type: integer }
+                  done: { type: boolean }
+                  progress:
+                    type: object
+                    required: [done, target]
+                    properties:
+                      done: { type: integer }
+                      target: { type: integer }
+    TopicStat:
+      type: object
+      required: [slug, title, icon, mastery, answered]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        icon: { type: string }
+        mastery: { $ref: '#/components/schemas/Percent' }
+        answered: { type: integer, description: Answers counted (last 10 per topic) }
+
+    # ---------- Questions ----------
+    Question:
+      type: object
+      description: A question as shown before answering — never includes the answer.
+      required: [id, key, topic, type, prompt, media, options, pick]
+      properties:
+        id: { type: integer }
+        key: { type: string, description: 'Stable key (bookmarks, lesson checks)' }
+        topic: { type: string, description: Topic slug }
+        type: { type: string, enum: [single, multi, image], description: 'image = answers are road signs' }
+        prompt: { type: string }
+        media:
+          oneOf:
+            - type: object
+              required: [kind, code]
+              properties:
+                kind: { const: sign }
+                code: { type: string }
+            - { type: 'null' }
+        options:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id: { type: string }
+              text: { type: string }
+              sign: { type: string, description: Sign code for image answers }
+        pick: { type: integer, description: How many answers to mark }
+    AnswerResult:
+      type: object
+      required: [correct, correctIds, explanation, lesson]
+      properties:
+        correct: { type: boolean }
+        correctIds: { type: array, items: { type: string } }
+        explanation: { type: string }
+        lesson: { $ref: '#/components/schemas/LinkOrNull' }
+    MockAttempt:
+      type: object
+      required: [id, status, deadlineAt, startedAt, pass, caseStudy, questions, signs, answers, flagged, result]
+      properties:
+        id: { type: integer }
+        status: { type: string, enum: [in_progress, finished] }
+        deadlineAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        pass: { type: integer, description: Pass mark for this attempt }
+        caseStudy:
+          oneOf:
+            - type: object
+              required: [title, scenario, ids]
+              properties:
+                title: { type: string }
+                scenario: { type: string }
+                ids: { type: array, items: { type: integer }, description: Question ids that belong to the case study }
+            - { type: 'null' }
+        questions: { type: array, items: { $ref: '#/components/schemas/Question' } }
+        signs: { $ref: '#/components/schemas/SignMap' }
+        answers: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        flagged: { type: array, items: { type: integer } }
+        result:
+          description: null while running; the review once finished
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              required: [score, total, passed, seconds, review, breakdown]
+              properties:
+                score: { type: integer }
+                total: { type: integer }
+                passed: { type: boolean }
+                seconds: { type: integer }
+                review:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, correct, correctIds, explanation]
+                    properties:
+                      id: { type: integer }
+                      correct: { type: boolean }
+                      correctIds: { type: array, items: { type: string } }
+                      explanation: { type: string }
+                breakdown:
+                  type: array
+                  description: Per topic, weakest first
+                  items:
+                    type: object
+                    required: [topic, correct, total]
+                    properties:
+                      topic: { type: string }
+                      correct: { type: integer }
+                      total: { type: integer }
+
+    # ---------- Content blocks (lessons and e-book chapters) ----------
+    Block:
+      description: A piece of lesson / chapter content; the frontend renders each type.
+      oneOf:
+        - type: object
+          required: [type, text]
+          properties: { type: { const: text }, text: { type: string, description: 'Paragraphs split by blank lines; **bold** allowed' } }
+        - type: object
+          required: [type, text]
+          properties: { type: { const: heading }, text: { type: string } }
+        - type: object
+          required: [type, items]
+          properties: { type: { const: keypoints }, title: { type: string }, items: { type: array, items: { type: string } } }
+        - type: object
+          required: [type, tone, text]
+          properties: { type: { const: callout }, tone: { enum: [tip, warning, rule] }, title: { type: string }, text: { type: string } }
+        - type: object
+          required: [type, figure]
+          properties: { type: { const: figure }, figure: { enum: [stopping-distances, sign-shapes, two-second-rule, mirror-signal] }, caption: { type: string } }
+        - type: object
+          required: [type, codes]
+          properties: { type: { const: signs }, codes: { type: array, items: { type: string } }, caption: { type: string } }
+        - type: object
+          required: [type, clip]
+          properties: { type: { const: scene }, clip: { type: string, description: Hazard clip slug }, caption: { type: string } }
+        - type: object
+          required: [type, questions]
+          properties: { type: { const: check }, questions: { type: array, items: { type: string }, description: Question keys } }
+
+    # ---------- Road signs ----------
+    SignSpec:
+      type: object
+      description: How to draw the sign (the frontend has the symbol library)
+      required: [shape, fill, symbol]
+      properties:
+        shape: { enum: [triangle, circle, octagon, inverted-triangle, rect, square] }
+        fill: { type: string }
+        border: { type: string }
+        symbol: { type: string }
+        text: { type: string }
+        slash: { type: boolean }
+    Sign:
+      type: object
+      required: [code, name, category, meaning, spec]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        category: { enum: [warning, regulatory, information, motorway] }
+        meaning: { type: string }
+        spec: { $ref: '#/components/schemas/SignSpec' }
+    SignMap:
+      type: object
+      description: Signs referenced by the payload, by code
+      additionalProperties: { $ref: '#/components/schemas/Sign' }
+
+    # ---------- Hazard perception ----------
+    HazardClicks:
+      type: object
+      required: [clicks]
+      properties:
+        clicks:
+          type: array
+          maxItems: 100
+          description: Click times in ms from the start of the clip (0 … duration + 1000)
+          items: { type: number, minimum: 0 }
+    HazardClip:
+      type: object
+      required: [id, slug, title, description, durationMs, hazardCount, scene]
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        title: { type: string }
+        description: { type: string }
+        durationMs: { type: integer }
+        hazardCount: { type: integer }
+        scene: { $ref: '#/components/schemas/HazardScene' }
+    HazardScene:
+      type: object
+      description: |
+        A clip is data, rendered by the frontend's 2.5D engine. World units are metres:
+        x = lateral (0 = road centre, + right), z = forward, y = up. Store it as JSON.
+      required: [durationMs, speed, lighting, road, props, actors]
+      properties:
+        durationMs: { type: integer }
+        speed:
+          type: array
+          description: Camera speed keyframes [timeMs, metres per second]
+          items: { type: array, prefixItems: [{ type: number }, { type: number }], minItems: 2, maxItems: 2 }
+        lighting: { enum: [day, dusk, night] }
+        rain: { type: boolean }
+        cameraX: { type: number }
+        road:
+          type: object
+          required: [halfWidth, markings, pavement]
+          properties:
+            halfWidth: { type: number }
+            markings: { enum: [centre, none, motorway] }
+            pavement: { type: boolean }
+            verge: { enum: [grass, hedge] }
+        sideRoads:
+          type: array
+          items:
+            type: object
+            required: [z, side, width]
+            properties: { z: { type: number }, side: { enum: [left, right] }, width: { type: number } }
+        zebra: { type: array, items: { type: object, required: [z], properties: { z: { type: number } } } }
+        props:
+          type: array
+          items:
+            type: object
+            required: [kind, x, z]
+            properties:
+              kind: { enum: [house, shop, school, tree, lamp, parkedCar, busStop, hedge, sign, fence, beacon] }
+              x: { type: number }
+              z: { type: number }
+              len: { type: number }
+              h: { type: number }
+              color: { type: string }
+              sign: { type: string }
+              view: { enum: [rear, front] }
+        actors:
+          type: array
+          items:
+            type: object
+            required: [id, kind, keys]
+            properties:
+              id: { type: string }
+              kind: { enum: [pedestrian, child, cyclist, car, van, bus, tractor, ball, horse] }
+              color: { type: string }
+              view: { enum: [rear, front, side] }
+              keys:
+                type: array
+                description: '[timeMs, x, z] position keyframes'
+                items: { type: array, items: { type: number }, minItems: 3, maxItems: 3 }
+              doorAt: { type: number }
+              brakeAt: { type: number }
+    HazardResult:
+      type: object
+      required: [score, maxScore, flagged, windows, clicks]
+      properties:
+        score: { type: integer }
+        maxScore: { type: integer, description: 5 per hazard }
+        flagged: { type: boolean, description: Cheating pattern detected → scored 0 }
+        clicks: { type: array, items: { type: number }, description: Sorted }
+        windows:
+          type: array
+          items:
+            type: object
+            required: [id, label, startMs, endMs, score, clickMs]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              startMs: { type: integer }
+              endMs: { type: integer }
+              actor: { type: string, description: Actor id to highlight in the review }
+              score: { type: integer, minimum: 0, maximum: 5 }
+              clickMs: { type: [number, 'null'] }

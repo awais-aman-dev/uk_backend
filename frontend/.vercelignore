@@ -1,0 +1,9 @@
+# Local-only: embedded dev database, build output, env files, screenshots, agent worktrees
+.data
+.output
+.nuxt
+.claude
+node_modules
+.env*
+*.png
+.idea

@@ -1,0 +1,16 @@
+node_modules
+.nuxt
+.output
+.env
+.env.*
+!.env.example
+.vercel
+.DS_Store
+.idea
+.nitro
+.cache
+.data
+dist
+*.log
+.env*
+.claude/worktrees
