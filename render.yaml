@@ -1,0 +1,93 @@
+# Render blueprint for the develop/dev site: one free web service, nothing else.
+#
+# Postgres and Redis are deliberately NOT declared here. Render asks for a payment method before
+# it will evaluate a blueprint that can create managed databases, so they are hosted elsewhere on
+# providers whose free tiers need no card (Neon or Supabase for Postgres, Redis Cloud for the
+# Celery broker) and reached through DATABASE_URL, REDIS_URL and CELERY_BROKER_URL. That also
+# avoids Render's free Postgres being deleted 30 days after it is created.
+#
+# The rest of the prototype arrangement:
+#   - gunicorn, the Celery worker and the beat scheduler share this one service, because Render's
+#     Background Worker service type is not on the free plan (see scripts/render-start.sh);
+#   - the service sleeps after 15 minutes without traffic and takes ~1 minute to wake, which the
+#     nightly scheduled jobs notice;
+#   - 512 MB of RAM for all three processes, hence one gunicorn worker and a solo-pool worker;
+#   - there is no shell and no pre-deploy command, so migrate and sync_roles run at start-up.
+#
+# Secrets are marked `sync: false`: Render prompts for them and they are never stored in git.
+
+services:
+  - type: web
+    name: uk-backend-dev
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: develop
+    # CI gates the deploy instead: .github/workflows/ci.yml calls the deploy hook once the
+    # checks pass, so a merge that breaks the tests never reaches the dev site.
+    # Quoted, because YAML would otherwise read a bare `off` as the boolean false.
+    autoDeployTrigger: "off"
+    dockerfilePath: ./Dockerfile
+    # Invoked through bash, so the deploy does not depend on the file's executable bit.
+    dockerCommand: bash ./scripts/render-start.sh
+    healthCheckPath: /api/healthcheck/
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: ENVIRONMENT
+        value: develop
+      - key: SECRET_KEY
+        generateValue: true
+
+      # --- Processes ---------------------------------------------------------------------------
+      # Both exist only because the free plan has no Background Worker service.
+      - key: RUN_WORKER_IN_WEB
+        value: true
+      - key: WEB_CONCURRENCY
+        value: 1
+
+      # --- Backing services, hosted off Render ------------------------------------------------
+      # Both now cross the public internet, so both want TLS:
+      #   DATABASE_URL     postgres://…/uk_backend?sslmode=require
+      #   REDIS/BROKER     rediss://…  — and append ?ssl_cert_reqs=required, because a bare
+      #                    rediss:// URL defaults to CERT_NONE, which encrypts the connection
+      #                    without verifying who is on the other end of it.
+      - key: DATABASE_URL
+        sync: false
+      # Django's cache, rate-limit counters and login lockouts.
+      - key: REDIS_URL
+        sync: false
+      # The Celery queue. Point it at a different Redis database number from REDIS_URL where the
+      # provider allows one (…/1 rather than …/0), so queued tasks and cache entries stay apart.
+      # Set the instance's eviction policy to noeviction: any other policy lets Redis silently
+      # drop queued tasks under memory pressure.
+      - key: CELERY_BROKER_URL
+        sync: false
+
+      # --- Hosts and origins ------------------------------------------------------------------
+      # Must match this service's own hostname. Update if Render appends a suffix to the name.
+      - key: ALLOWED_HOSTS
+        value: uk-backend-dev.onrender.com
+      - key: FRONTEND_BASE_URL
+        value: https://1theory-demo.vercel.app/
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://1theory-demo.vercel.app
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://1theory-demo.vercel.app,https://uk-backend-dev.onrender.com
+
+      # --- Secrets ----------------------------------------------------------------------------
+      # Postmark SMTP: the server token goes in both. production.py reads them with no default,
+      # so the service will not start until they are set.
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      # Also read with no default. Use test-mode keys here.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      # The signing secret of the Stripe webhook endpoint pointing at this service.
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Blank is valid; Google sign-in stays refused until it is set.
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
