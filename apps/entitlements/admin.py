@@ -1,11 +1,14 @@
 from django.contrib import admin
-from django.http import HttpRequest
+from django.urls import reverse
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 
 from apps.entitlements.models import Subscription
+from apps.staff.admin import ReadOnlyAdminMixin, placeholder
 
 
 @admin.register(Subscription)
-class SubscriptionAdmin(admin.ModelAdmin):
+class SubscriptionAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     """Read-only on purpose.
 
     Editing an expiry date here would change what a customer paid for, with no record of who did
@@ -19,15 +22,17 @@ class SubscriptionAdmin(admin.ModelAdmin):
     date_hierarchy = "package_expires_at"
     list_select_related = ["user", "package"]
 
+    readonly_fields = ["candidate"]
+
     @admin.display(description="Status")
     def status(self, subscription: Subscription) -> str:
         return subscription.status_display
 
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
-
-    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
-
-    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
+    @admin.display(description="Candidate")
+    def candidate(self, subscription: Subscription) -> SafeString:
+        """Back to the customer's CRM record."""
+        customer = subscription.user
+        if customer is None:
+            return placeholder()
+        url = reverse("admin:crm_candidate_change", args=[customer.pk])
+        return format_html('<a href="{}">{}</a>', url, customer.email)

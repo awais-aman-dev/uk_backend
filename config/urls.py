@@ -5,6 +5,10 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 
 from apps.core.views import healthcheck
 
+admin.site.site_header = "CRM Administration"
+admin.site.site_title = "CRM Administration"
+admin.site.index_title = "CRM"
+
 urlpatterns = [
     path("api/healthcheck/", healthcheck, name="healthcheck"),
     path(settings.ADMIN_URL, admin.site.urls),

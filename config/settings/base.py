@@ -38,6 +38,8 @@ ENVIRONMENT = env.str("ENVIRONMENT", default="local")
 ALLOWED_HOSTS: list[str] = env.list("ALLOWED_HOSTS", default=[])
 
 INSTALLED_APPS = [
+    # Before django.contrib.admin, because it replaces the admin's templates.
+    "jazzmin",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -56,6 +58,8 @@ INSTALLED_APPS = [
     "apps.catalog",
     "apps.billing",
     "apps.entitlements",
+    "apps.staff",
+    "apps.crm",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -226,6 +230,75 @@ CSRF_TRUSTED_ORIGINS: list[str] = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_HTTPONLY = True
+
+# --- Back office ---------------------------------------------------------------------------------
+# Jazzmin themes the Django admin. Everything here is presentation: what a staff member may see or
+# do is decided by permissions in apps/staff, never by this configuration.
+
+JAZZMIN_SETTINGS = {
+    "site_title": "CRM Administration",
+    "site_header": "CRM Administration",
+    "site_brand": "CRM Administration",
+    "site_logo": "back_office/img/logo.svg",
+    "site_logo_classes": "adm-brand-logo",
+    "login_logo": "back_office/img/logo.svg",
+    "site_icon": "back_office/img/logo.svg",
+    "welcome_sign": "Sign in to CRM Administration",
+    "custom_css": "back_office/css/theme.css",
+    "custom_js": "back_office/js/shell.js",
+    "show_ui_builder": False,
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "topmenu_links": [],
+    "usermenu_links": [],
+    # Customers first: it is what support staff open all day.
+    "order_with_respect_to": ["crm", "support", "catalog", "billing", "entitlements", "accounts", "auth"],
+    "icons": {
+        "crm": "fas fa-address-book",
+        "crm.Candidate": "fas fa-user-graduate",
+        "accounts": "fas fa-users",
+        "accounts.User": "fas fa-user",
+        "accounts.SecurityToken": "fas fa-key",
+        "catalog": "fas fa-box",
+        "catalog.Package": "fas fa-box",
+        "billing": "fas fa-credit-card",
+        "billing.Order": "fas fa-receipt",
+        "billing.PromoCode": "fas fa-tags",
+        "billing.StripeEvent": "fas fa-exchange-alt",
+        "entitlements": "fas fa-id-card",
+        "entitlements.Subscription": "fas fa-id-card",
+        "core.AuditEvent": "fas fa-clipboard-list",
+        "auth": "fas fa-users-cog",
+        "auth.Group": "fas fa-users-cog",
+    },
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+    # Related records open as full pages rather than modals, so their own permissions apply.
+    "related_modal_active": False,
+    "changeform_format": "single",
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar": "navbar-dark",
+    "no_navbar_border": True,
+    "navbar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_fixed": True,
+    "sidebar_nav_flat_style": True,
+    "sidebar_nav_child_indent": True,
+    "accent": "accent-primary",
+    "theme": "default",
+    "default_theme_mode": "light",
+    "actions_sticky_top": True,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-secondary",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-primary",
+    },
+}
 
 # --- Runtime configuration (editable by superusers in admin) -------------------------------------
 
