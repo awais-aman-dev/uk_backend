@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'back_office/css/learning-preview.css' %}">
+{% endblock %}
+
+{% comment %}
+    Content as a student would see it. Not a copy of the student frontend: enough to catch a
+    missing heading, a wrong sign code or a block in the wrong place before publishing.
+{% endcomment %}
+
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a>
+        &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+        &rsaquo; <a href="{% url 'admin:learning_'|add:opts.model_name|add:'_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+        &rsaquo; Preview
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="adm-preview">
+        {% if problems %}
+            <div class="adm-preview__problems">
+                <strong>This cannot be published yet:</strong>
+                <ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+            </div>
+        {% endif %}
+
+        <article class="adm-preview__page">
+            {% if content.topic %}<p class="adm-preview__eyebrow">{{ content.topic.title }}</p>{% endif %}
+            <h1>{{ content.title }}</h1>
+            {% if content.summary %}<p class="adm-preview__summary">{{ content.summary }}</p>{% endif %}
+            {% if content.minutes %}<p class="adm-preview__meta">{{ content.minutes }} min read</p>{% endif %}
+
+            {% comment %}
+                Safe to render: the HTML was cleaned against an allowlist when it was saved, so
+                the database never holds anything a student page could not be given.
+            {% endcomment %}
+            {% for block in content.blocks %}
+                {% if block.title and content.blocks|length > 1 %}
+                    <h2 class="adm-preview__block-title">{{ block.title }}</h2>
+                {% endif %}
+                <div class="adm-preview__body">{{ block.html|safe }}</div>
+            {% empty %}
+                <p class="adm-preview__placeholder">Nothing is published in here yet.</p>
+            {% endfor %}
+        </article>
+
+        <p><a class="adm-btn" href="../change/">Back to editing</a></p>
+    </div>
+{% endblock %}

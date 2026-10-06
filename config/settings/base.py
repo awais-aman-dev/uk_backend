@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
+    "django_ckeditor_5",
     # Local
     "apps.core",
     "apps.accounts",
@@ -60,6 +61,7 @@ INSTALLED_APPS = [
     "apps.entitlements",
     "apps.staff",
     "apps.crm",
+    "apps.learning",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -231,6 +233,44 @@ CSRF_TRUSTED_ORIGINS: list[str] = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_HTTPONLY = True
 
+# --- Rich text -----------------------------------------------------------------------------------
+# The toolbar staff get when writing lessons and e-book chapters. Deliberately short: every button
+# here is something the student page must be able to render, and whatever the editor produces is
+# cleaned on save against the list in apps/learning/html.py.
+
+# Only staff may reach the editor's upload endpoint.
+CKEDITOR_5_FILE_UPLOAD_PERMISSION = "staff"
+
+CKEDITOR_5_CONFIGS = {
+    "default": {
+        "toolbar": [
+            "heading",
+            "|",
+            "bold",
+            "italic",
+            "link",
+            "bulletedList",
+            "numberedList",
+            "|",
+            "blockQuote",
+            "insertTable",
+            "|",
+            "undo",
+            "redo",
+        ],
+        # The page supplies the h1, so content starts at h2.
+        "heading": {
+            "options": [
+                {"model": "paragraph", "title": "Paragraph", "class": "ck-heading_paragraph"},
+                {"model": "heading2", "view": "h2", "title": "Heading", "class": "ck-heading_heading2"},
+                {"model": "heading3", "view": "h3", "title": "Subheading", "class": "ck-heading_heading3"},
+            ]
+        },
+        "table": {"contentToolbar": ["tableColumn", "tableRow", "mergeTableCells"]},
+        "language": "en-gb",
+    },
+}
+
 # --- Back office ---------------------------------------------------------------------------------
 # Jazzmin themes the Django admin. Everything here is presentation: what a staff member may see or
 # do is decided by permissions in apps/staff, never by this configuration.
@@ -252,7 +292,16 @@ JAZZMIN_SETTINGS = {
     "topmenu_links": [],
     "usermenu_links": [],
     # Customers first: it is what support staff open all day.
-    "order_with_respect_to": ["crm", "support", "catalog", "billing", "entitlements", "accounts", "auth"],
+    "order_with_respect_to": [
+        "crm",
+        "support",
+        "learning",
+        "catalog",
+        "billing",
+        "entitlements",
+        "accounts",
+        "auth",
+    ],
     "icons": {
         "crm": "fas fa-address-book",
         "crm.Candidate": "fas fa-user-graduate",
@@ -267,6 +316,11 @@ JAZZMIN_SETTINGS = {
         "billing.StripeEvent": "fas fa-exchange-alt",
         "entitlements": "fas fa-id-card",
         "entitlements.Subscription": "fas fa-id-card",
+        "learning": "fas fa-graduation-cap",
+        "learning.Topic": "fas fa-layer-group",
+        "learning.Lesson": "fas fa-book-open",
+        "learning.Chapter": "fas fa-bookmark",
+        "learning.Sign": "fas fa-sign",
         "core.AuditEvent": "fas fa-clipboard-list",
         "auth": "fas fa-users-cog",
         "auth.Group": "fas fa-users-cog",
