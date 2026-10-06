@@ -97,7 +97,7 @@ class ContentType(models.TextChoices):
 
 # The kinds staff can create today. The rest are part of the shape, not yet of the product, and
 # publishing one is refused rather than quietly serving an empty item.
-AVAILABLE_CONTENT_TYPES = (ContentType.THEORY,)
+AVAILABLE_CONTENT_TYPES = (ContentType.THEORY, ContentType.QUESTION)
 
 
 class LearningContent(PublishableModel, TimestampedModel):
@@ -113,6 +113,14 @@ class LearningContent(PublishableModel, TimestampedModel):
     slug = models.SlugField(unique=True)
     title = models.CharField(max_length=160)
     body_html = models.TextField("content", blank=True, help_text="Used by theory material.")
+    question = models.ForeignKey(
+        "learning.Question",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="used_in",
+        help_text="Used by question material: which question from the bank to ask here.",
+    )
     order = models.PositiveSmallIntegerField(default=0, help_text="Position within this subchapter.")
 
     only_for_packages = models.ManyToManyField(
@@ -166,3 +174,148 @@ class Sign(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.code})"
+
+
+class QuestionType(models.TextChoices):
+    """How a question is answered.
+
+    ``image`` is a single-answer question whose options are road signs rather than words, which
+    the frontend lays out as pictures.
+    """
+
+    SINGLE = "single", "One answer"
+    MULTI = "multi", "Several answers"
+    IMAGE = "image", "Road sign answers"
+
+
+class Question(PublishableModel, TimestampedModel):
+    """A question in the bank.
+
+    Questions live in one bank and are referred to wherever they are used — in a subchapter, in a
+    practice exam, in a mock test — so the same question is never copied and an edit reaches every
+    place at once.
+
+    Which package a question belongs to follows from its chapter, so there is no separate gate
+    here to fall out of step with the material it is testing.
+    """
+
+    key = models.SlugField(unique=True, help_text="How content and bookmarks refer to this question.")
+    chapter = models.ForeignKey(
+        Chapter,
+        on_delete=models.PROTECT,
+        related_name="questions",
+        help_text="The area this question belongs to. Students practise and are scored by it.",
+    )
+    question_type = models.CharField("type", max_length=10, choices=QuestionType.choices, default=QuestionType.SINGLE)
+    prompt = models.TextField(help_text="The question itself.")
+    explanation = models.TextField(blank=True, help_text="Shown after answering.")
+    media_sign = models.ForeignKey(
+        Sign,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="questions",
+        verbose_name="sign shown with the question",
+    )
+    learn_more = models.ForeignKey(
+        Subchapter,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="questions",
+        help_text="Where a student can go to read about this, offered after answering.",
+    )
+
+    class Meta:
+        ordering = ["chapter", "key"]
+        permissions = [("publish_question", "Can publish and unpublish questions")]
+
+    def __str__(self) -> str:
+        return self.prompt[:70]
+
+    @property
+    def correct_option_ids(self) -> list[str]:
+        return [option.option_id for option in self.options.all() if option.is_correct]
+
+    @property
+    def pick(self) -> int:
+        """How many answers a student marks, which is simply how many are right."""
+        return len(self.correct_option_ids) or 1
+
+
+class QuestionOption(TimestampedModel):
+    """One answer a student can choose.
+
+    Whether it is the right one is never serialised to students before they answer: the API builds
+    their view of a question without this column.
+    """
+
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="options")
+    option_id = models.CharField(
+        max_length=4,
+        help_text="Short id the frontend sends back, such as a, b, c.",
+    )
+    text = models.CharField(max_length=300, blank=True)
+    sign = models.ForeignKey(
+        Sign,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="answer_options",
+        help_text="For questions answered with road signs.",
+    )
+    is_correct = models.BooleanField(default=False)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["question", "order", "option_id"]
+        constraints = [models.UniqueConstraint(fields=["question", "option_id"], name="unique_option_id_per_question")]
+
+    def __str__(self) -> str:
+        return f"{self.option_id}. {self.text or self.sign_id or ''}"
+
+
+class ExamKind(models.TextChoices):
+    PRACTICE = "practice", "Practice exam"
+    MOCK = "mock", "Mock test"
+
+
+class PracticeExam(PublishableModel, TimestampedModel):
+    """A set of questions a student sits in one go.
+
+    Questions are referred to, not copied, so the same question can appear in several exams and an
+    edit reaches all of them.
+    """
+
+    slug = models.SlugField(unique=True)
+    title = models.CharField(max_length=160)
+    description = models.CharField(max_length=300, blank=True)
+    kind = models.CharField(max_length=10, choices=ExamKind.choices, default=ExamKind.PRACTICE)
+
+    time_limit_seconds = models.PositiveIntegerField(null=True, blank=True, help_text="Leave empty for no time limit.")
+    pass_mark = models.PositiveSmallIntegerField(help_text="How many questions must be right to pass.")
+    order = models.PositiveSmallIntegerField(default=0)
+
+    questions = models.ManyToManyField(Question, through="learning.ExamQuestion", related_name="exams")
+
+    class Meta:
+        ordering = ["order", "title"]
+        permissions = [("publish_practiceexam", "Can publish and unpublish exams")]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class ExamQuestion(models.Model):
+    """One question's place in an exam."""
+
+    exam = models.ForeignKey(PracticeExam, on_delete=models.CASCADE, related_name="exam_questions")
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="exam_places")
+    order = models.PositiveSmallIntegerField(default=0, help_text="Position within this exam.")
+
+    class Meta:
+        ordering = ["exam", "order"]
+        constraints = [models.UniqueConstraint(fields=["exam", "question"], name="unique_question_per_exam")]
+
+    def __str__(self) -> str:
+        return f"{self.exam.title}: {self.question}"

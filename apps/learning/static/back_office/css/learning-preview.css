@@ -80,6 +80,30 @@
     text-decoration: none;
 }
 
+/* A question's answers, with the right one marked — a staff page only. */
+.adm-preview__answers {
+    margin: 18px 0;
+    padding-left: 24px;
+}
+
+.adm-preview__answers li {
+    margin-bottom: 6px;
+}
+
+.adm-preview__answer--correct {
+    font-weight: 600;
+}
+
+.adm-preview__answer--correct span {
+    margin-left: 8px;
+    padding: 1px 8px;
+    background: #dcfce7;
+    border-radius: 10px;
+    color: #166534;
+    font-size: 12px;
+    font-weight: 500;
+}
+
 .adm-preview__block-title {
     margin-top: 32px;
     padding-top: 18px;

@@ -3,7 +3,16 @@ from django.contrib.auth.models import Group
 
 from apps.accounts.models import User
 from apps.core.models import PublishStatus
-from apps.learning.models import Chapter, LearningContent, Sign, SignCategory, Subchapter
+from apps.learning.models import (
+    Chapter,
+    LearningContent,
+    Question,
+    QuestionOption,
+    QuestionType,
+    Sign,
+    SignCategory,
+    Subchapter,
+)
 
 PASSWORD = "Riverbank42"
 CONTENT = "<p>Thinking distance plus braking distance.</p>"
@@ -72,6 +81,31 @@ def sign(db):
         meaning="Give way to traffic on the major road.",
         spec={"shape": "inverted-triangle", "fill": "#fff", "symbol": "give-way"},
     )
+
+
+@pytest.fixture
+def make_question(chapter):
+    """A question with four answers, the first of which is right unless told otherwise."""
+
+    def build(key="distraction", question_type=QuestionType.SINGLE, correct=("a",), **fields):
+        question = Question.objects.create(
+            chapter=fields.pop("chapter", chapter),
+            key=key,
+            question_type=question_type,
+            prompt=fields.pop("prompt", "Which of these could distract you while driving?"),
+            **fields,
+        )
+        for order, option_id in enumerate(("a", "b", "c", "d"), start=1):
+            QuestionOption.objects.create(
+                question=question,
+                option_id=option_id,
+                text=f"Answer {option_id}",
+                is_correct=option_id in correct,
+                order=order,
+            )
+        return question
+
+    return build
 
 
 @pytest.fixture
