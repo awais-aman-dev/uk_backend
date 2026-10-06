@@ -1,0 +1,40 @@
+{# Shared layout for every transactional email. Table-based and inline-styled, because email
+   clients support little else. Child templates fill the "content" block. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}1Theory{% endblock %}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f4f7; font-family:Arial,Helvetica,sans-serif; color:#333333;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#f4f4f7;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table width="600" cellpadding="0" cellspacing="0" role="presentation"
+               style="max-width:600px; background-color:#ffffff; border-radius:8px;">
+          <tr>
+            <td style="background-color:#1e3a5f; padding:28px 40px; text-align:center;">
+              <span style="font-size:22px; font-weight:bold; color:#ffffff;">1Theory</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px 40px; font-size:15px; line-height:1.6;">
+              {% block content %}{% endblock %}
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f4f4f7; padding:20px 40px; text-align:center; font-size:12px; color:#888888;">
+              <p style="margin:0 0 6px 0;">1Theory &mdash; Online Theory Test Preparation</p>
+              <p style="margin:0;">
+                Questions? Email
+                <a href="mailto:support@1theory.co.uk" style="color:#2563eb;">support@1theory.co.uk</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

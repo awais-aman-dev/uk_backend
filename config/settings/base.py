@@ -6,6 +6,7 @@ a ``.env`` file; ``manage.py`` loads one for local convenience, deployed environ
 environment variables.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -45,9 +46,15 @@ INSTALLED_APPS = [
     # Third party
     "corsheaders",
     "constance",
+    "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
     # Local
     "apps.core",
+    "apps.accounts",
 ]
+
+AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -88,6 +95,54 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# --- REST API ------------------------------------------------------------------------------------
+
+REST_FRAMEWORK = {
+    # Clients authenticate with `Authorization: Bearer <access token>`.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
+    # Endpoints require a logged-in user unless they set permission_classes = [AllowAny].
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Views pick a scope by name, e.g. throttle_scope / a throttle class with scope = "auth_anon".
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_anon": "10/minute",
+        "auth_user": "30/minute",
+        "password_reset": "5/hour",
+        "email_resend": "5/hour",
+    },
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    # The lifetime for "remember me" logins. Without it, login issues a 24-hour token instead.
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    # Refreshing returns a new refresh token and blacklists the old one, so a stolen
+    # refresh token stops working as soon as the real user refreshes.
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "1Theory UK API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
+
+# --- Cache ---------------------------------------------------------------------------------------
+# Used for API throttling and login lockouts, so the counters must be shared by all web processes.
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env.str("REDIS_URL", default="redis://localhost:6379/0"),
+    }
+}
+
+# --- Email ---------------------------------------------------------------------------------------
+
+DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="1Theory <info@1theory.co.uk>")
 
 # --- Internationalisation ------------------------------------------------------------------------
 

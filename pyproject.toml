@@ -12,6 +12,10 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "whitenoise>=6.9",
     "gunicorn>=26.2.0",
+    "djangorestframework>=3.18.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "drf-spectacular>=0.30.0",
+    "redis>=8.1.0",
 ]
 
 [dependency-groups]
@@ -21,6 +25,7 @@ dev = [
     "django-stubs[compatible-mypy]>=5.2,<6",
     "pytest>=8.4",
     "pytest-django>=4.11",
+    "djangorestframework-stubs[compatible-mypy]>=3.16.9",
 ]
 
 [tool.uv]

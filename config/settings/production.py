@@ -22,6 +22,24 @@ DATABASES = {"default": database(env.str("DATABASE_URL"))}
 
 FRONTEND_BASE_URL = with_trailing_slash(env.str("FRONTEND_BASE_URL"))
 
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env.str("REDIS_URL"),
+    }
+}
+
+# --- Email ---------------------------------------------------------------------------------------
+# Postmark is the mail provider; these are its SMTP settings (username and password are both the
+# Postmark server token). Any other SMTP provider works with the same four variables.
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = env.str("EMAIL_HOST", default="smtp.postmarkapp.com")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env.str("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = env.str("EMAIL_HOST_PASSWORD")
+EMAIL_USE_TLS = True
+
 # --- HTTPS ---------------------------------------------------------------------------------------
 # TLS terminates at the load balancer, which forwards the original scheme in X-Forwarded-Proto.
 

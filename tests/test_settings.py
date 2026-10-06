@@ -20,7 +20,13 @@ PRODUCTION_ENV = {
     "ALLOWED_HOSTS": "api.example.com",
     "DATABASE_URL": "postgres://user:pass@db.invalid:5432/uk_backend",
     "FRONTEND_BASE_URL": "https://frontend.example.com",
+    "REDIS_URL": "redis://redis.invalid:6379/0",
+    "EMAIL_HOST_USER": "postmark-server-token",
+    "EMAIL_HOST_PASSWORD": "postmark-server-token",
 }
+
+# Variables with no safe default: production settings must refuse to start without them.
+REQUIRED_VARIABLES = sorted(PRODUCTION_ENV)
 
 
 def run_django(*args: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -50,7 +56,7 @@ def production_setting(name: str, env: dict[str, str]) -> str:
 
 
 class TestProductionSettings:
-    @pytest.mark.parametrize("variable", ["SECRET_KEY", "ALLOWED_HOSTS", "DATABASE_URL", "FRONTEND_BASE_URL"])
+    @pytest.mark.parametrize("variable", REQUIRED_VARIABLES)
     def test_refuses_to_start_without_required_variable(self, variable):
         env = {key: value for key, value in PRODUCTION_ENV.items() if key != variable}
 

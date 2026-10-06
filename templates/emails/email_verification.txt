@@ -1,0 +1,11 @@
+Hi {{ first_name|default:"there" }},
+
+Thanks for registering with 1Theory. Please confirm your email address by opening this link:
+
+{{ verification_url }}
+
+The link works once and expires in 24 hours.
+
+If you did not create an account, you can ignore this email.
+
+The 1Theory team

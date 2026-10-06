@@ -14,3 +14,6 @@ CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localho
 DATABASES = {
     "default": database(env.str("DATABASE_URL", default="postgres://postgres:postgres@localhost:5432/uk_backend"))
 }
+
+# Print emails to the container logs instead of sending them.
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"

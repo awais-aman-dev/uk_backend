@@ -17,14 +17,21 @@ services:
       interval: 2s
       retries: 15
 
+  # Holds the counters behind API rate limits and login lockouts.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
   web:
     build: .
     # Development server, instead of the gunicorn command in the Dockerfile.
     command: python manage.py runserver 0.0.0.0:8000
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.local
-      # Inside compose the database is reachable by the service name "db".
+      # Inside compose the other services are reachable by their service names.
       DATABASE_URL: postgres://postgres:postgres@db:5432/uk_backend
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     # Mount the source code so edits apply without rebuilding the image.
@@ -33,6 +40,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   postgres_data:
