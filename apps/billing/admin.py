@@ -1,7 +1,10 @@
 from django.contrib import admin
-from django.http import HttpRequest
+from django.urls import reverse
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 
 from apps.billing.models import Order, PromoCode, StripeEvent
+from apps.staff.admin import ReadOnlyAdminMixin, placeholder
 
 
 @admin.register(PromoCode)
@@ -14,7 +17,7 @@ class PromoCodeAdmin(admin.ModelAdmin):
 
 
 @admin.register(Order)
-class OrderAdmin(admin.ModelAdmin):
+class OrderAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     """Read-only on purpose.
 
     An order records what somebody was charged. Editing a status or a price here would change the
@@ -27,27 +30,22 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ["email", "id", "stripe_session_id", "transaction_id"]
     date_hierarchy = "created_at"
     list_select_related = ["package", "user"]
+    readonly_fields = ["candidate"]
 
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
-
-    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
-
-    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
+    @admin.display(description="Candidate")
+    def candidate(self, order: Order) -> SafeString:
+        """Back to the customer's CRM record, for staff who hold CRM access."""
+        customer = order.user
+        if customer is None:
+            return placeholder()
+        url = reverse("admin:crm_candidate_change", args=[customer.pk])
+        return format_html('<a href="{}">{}</a>', url, customer.email)
 
 
 @admin.register(StripeEvent)
-class StripeEventAdmin(admin.ModelAdmin):
+class StripeEventAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     """The log of webhooks Stripe has delivered, for tracing a payment that went wrong."""
 
     list_display = ["event_type", "event_id", "received_at"]
     list_filter = ["event_type"]
     search_fields = ["event_id"]
-
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
-
-    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False

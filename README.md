@@ -104,6 +104,35 @@ uv run python manage.py migrate
 uv run python manage.py runserver
 ```
 
+### Back office
+
+The Django admin at `/api/admin/` is the back office, themed with Jazzmin.
+
+Reaching the CRM is granted on purpose. `apps/staff` gates the areas holding customer data on
+permissions actually recorded against an account, so being a Django superuser is not by itself a
+way in — a superuser must grant themselves the permission first. That is least privilege by
+default, not a wall against whoever administers the system.
+
+Roles are declared in code, in each app's `roles.py`, and created by a migration:
+
+| Role | May |
+|---|---|
+| CRM Manager | Look customers up and read their records |
+
+`uv run python manage.py sync_roles` sets each role group's permissions to exactly what the code
+declares, so permissions added by hand in the admin are taken back. No role carries
+`crm.change_candidate` yet; grant it to an account directly, or add a role for it, once you decide
+who may edit customer details.
+
+A candidate's orders and access history appear on their page only for staff who also hold
+`billing.view_order` / `entitlements.view_subscription`, so CRM access alone does not reveal
+commercial history.
+
+Staff changes to customer records go through `apps/crm/services.py`, which checks the permission
+and writes an `AuditEvent` recording who changed what, from and to. Orders, subscriptions and the
+audit trail itself are read-only in the admin: changing an order's price there would alter the
+record of what somebody paid without moving any money.
+
 ### Settings
 
 | Module | Used by |

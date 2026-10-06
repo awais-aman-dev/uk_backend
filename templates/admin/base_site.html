@@ -1,0 +1,24 @@
+{% extends "admin/base.html" %}
+
+{% comment %}
+    Overriding base_site.html, rather than copying the whole of Jazzmin's base.html, keeps this
+    to the two things the back office changes. Applies to every admin area.
+{% endcomment %}
+
+{% block extrahead %}
+    {{ block.super }}
+    {% if user.is_authenticated %}
+        {% comment %}
+            Who is signed in, read by shell.js to build the account menu. Display only: it
+            decides nothing about access, so changing it in the browser gains nobody anything.
+        {% endcomment %}
+        <script id="adm-identity" type="application/json">
+            {"name": "{{ user.get_full_name|default:user.email|escapejs }}",
+             "role": "{{ user.groups.first.name|default:''|escapejs }}",
+             "isSuperuser": {% if user.is_superuser %}true{% else %}false{% endif %}}
+        </script>
+    {% endif %}
+{% endblock %}
+
+{# Jazzmin's version and copyright footer is not wanted here. #}
+{% block footer %}{% endblock %}
