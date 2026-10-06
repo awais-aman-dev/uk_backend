@@ -51,6 +51,7 @@ container start, so scaling out can't run them concurrently.
 |---|---|
 | Health | `GET /api/healthcheck/` |
 | Authentication | `POST /api/auth/register/`, `login/`, `logout/`, `token/refresh/`, `password/reset/`, `password/reset/confirm/`; `GET /api/auth/email/verify/`, `POST /api/auth/email/verify/resend/` |
+| Google sign-in | `POST /api/auth/google/`, `POST /api/auth/google/link/` |
 | Documentation | `/api/swagger/`, `/api/redoc/`, `/api/schema/` |
 | Admin | `/api/admin/` |
 
@@ -60,6 +61,9 @@ invalidates the old one.
 
 In local development emails are printed to the container logs rather than sent, so verification
 and password-reset links can be copied straight from `docker compose logs web`.
+
+Google sign-in needs `GOOGLE_CLIENT_IDS` set to the OAuth client ids the frontends use. While it
+is empty, those two endpoints refuse every token.
 
 ### Running without Docker
 

@@ -16,6 +16,8 @@ dependencies = [
     "djangorestframework-simplejwt>=5.5.1",
     "drf-spectacular>=0.30.0",
     "redis>=8.1.0",
+    "google-auth>=2.60.0",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]
@@ -26,6 +28,7 @@ dev = [
     "pytest>=8.4",
     "pytest-django>=4.11",
     "djangorestframework-stubs[compatible-mypy]>=3.16.9",
+    "types-requests>=2.33.0.20261006",
 ]
 
 [tool.uv]

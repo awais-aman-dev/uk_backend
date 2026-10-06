@@ -14,10 +14,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 
-from apps.accounts import services
+from apps.accounts import google_services, services
 from apps.accounts.models import User
 from apps.accounts.serializers import (
     DetailSerializer,
+    GoogleLinkSerializer,
+    GoogleSignInResponseSerializer,
+    GoogleSignInSerializer,
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -32,6 +35,7 @@ from apps.accounts.throttling import (
     PasswordResetThrottle,
 )
 from apps.core.http import client_ip
+from apps.integrations import google_identity
 
 GENERIC_RESET_RESPONSE = "If this email is registered, a reset link has been sent."
 
@@ -120,6 +124,95 @@ class LoginView(APIView):
         services.clear_failed_logins(email)
         tokens = services.issue_tokens(user, remember_me=data.validated_data["remember_me"])
         return Response(tokens, status=status.HTTP_200_OK)
+
+
+class GoogleSignInView(APIView):
+    """Sign in or sign up with a Google ID token from the browser."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthAnonThrottle]
+
+    @extend_schema(
+        request=GoogleSignInSerializer,
+        responses={
+            200: GoogleSignInResponseSerializer,
+            201: GoogleSignInResponseSerializer,
+            401: DetailSerializer,
+            409: DetailSerializer,
+        },
+        summary="Sign in with Google",
+    )
+    def post(self, request: Request) -> Response:
+        data = GoogleSignInSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+
+        try:
+            identity = google_identity.verify(data.validated_data["id_token"])
+        except google_identity.InvalidGoogleTokenError:
+            return Response({"detail": "Invalid Google token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            user, created = google_services.sign_in(identity)
+        except google_services.GoogleLinkRequiredError:
+            return Response(
+                {
+                    "detail": "An account with this email already exists. Please log in with your "
+                    "password and link your Google account.",
+                    # The frontend switches to its "link your account" flow on this value.
+                    "action": "link_google",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except google_services.GoogleAccountMismatchError:
+            return Response(
+                {"detail": "This email is linked to a different Google account."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if not user.is_active:
+            return Response({"detail": "This account is disabled."}, status=status.HTTP_403_FORBIDDEN)
+
+        tokens = services.issue_tokens(user)
+        return Response(
+            {**tokens, "created": created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class GoogleLinkView(APIView):
+    """Attach a Google account to the signed-in user's own account."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [AuthUserThrottle]
+
+    @extend_schema(
+        request=GoogleLinkSerializer,
+        responses={200: DetailSerializer, 400: DetailSerializer, 401: DetailSerializer, 409: DetailSerializer},
+        summary="Link a Google account",
+    )
+    def post(self, request: Request) -> Response:
+        data = GoogleLinkSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+
+        try:
+            identity = google_identity.verify(data.validated_data["id_token"])
+        except google_identity.InvalidGoogleTokenError:
+            return Response({"detail": "Invalid Google token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            google_services.link(cast(User, request.user), identity)
+        except google_services.GoogleAlreadyLinkedError:
+            return Response(
+                {"detail": "Google account is already linked."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except google_services.GoogleIdentityInUseError:
+            return Response(
+                {"detail": "This Google account is already linked to another account."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response({"detail": "Google account linked successfully."}, status=status.HTTP_200_OK)
 
 
 class TokenRefreshView(APIView):

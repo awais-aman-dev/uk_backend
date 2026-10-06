@@ -55,6 +55,17 @@ class LoginSerializer(serializers.Serializer):
         return value.lower()
 
 
+class GoogleSignInSerializer(serializers.Serializer):
+    id_token = serializers.CharField()
+    # Accepted so older clients keep working, then ignored. It used to choose which account to
+    # sign into, which let anyone with a Google token take over another person's account.
+    order_email = serializers.EmailField(required=False, allow_blank=True)
+
+
+class GoogleLinkSerializer(serializers.Serializer):
+    id_token = serializers.CharField()
+
+
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
@@ -78,6 +89,10 @@ class TokenPairSerializer(serializers.Serializer):
 
 class RegisterResponseSerializer(TokenPairSerializer):
     message = serializers.CharField()
+
+
+class GoogleSignInResponseSerializer(TokenPairSerializer):
+    created = serializers.BooleanField(help_text="True when this sign-in created the account.")
 
 
 class DetailSerializer(serializers.Serializer):
