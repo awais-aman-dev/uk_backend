@@ -10,6 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.catalog",
     "apps.billing",
+    "apps.entitlements",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -97,6 +99,13 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# --- Internationalisation ------------------------------------------------------------------------
+
+LANGUAGE_CODE = "en-gb"
+TIME_ZONE = "Europe/London"
+USE_I18N = True
+USE_TZ = True
 
 # --- REST API ------------------------------------------------------------------------------------
 
@@ -148,6 +157,34 @@ CACHES = {
 
 DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="1Theory <info@1theory.co.uk>")
 
+# --- Background work -----------------------------------------------------------------------------
+# Redis is both the cache and the Celery queue; different database numbers keep them apart.
+
+CELERY_BROKER_URL = env.str("CELERY_BROKER_URL", default="redis://localhost:6379/1")
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+# Only acknowledge a task once it finishes, so work is retried if a worker is killed mid-task.
+# Safe because the tasks here can be repeated without doing anything twice.
+CELERY_TASK_ACKS_LATE = True
+
+CELERY_BEAT_SCHEDULE = {
+    "send-expiry-reminders": {
+        "task": "apps.entitlements.tasks.send_expiry_reminders",
+        "schedule": crontab(hour="9", minute="0"),
+    },
+    "expire-accounts": {
+        "task": "apps.entitlements.tasks.expire_accounts",
+        "schedule": crontab(hour="0", minute="30"),
+    },
+}
+
+# --- Learning ------------------------------------------------------------------------------------
+# Where the cabinet sends a student with active access. Today that is the external platform the
+# product still uses; it becomes an internal URL when learning moves in-house.
+
+LEARNING_URL = env.str("LEARNING_URL", default="https://1theory.co.uk/")
+
 # --- Payments ------------------------------------------------------------------------------------
 # The webhook secret is what proves a webhook came from Stripe; without it no payment is accepted.
 
@@ -159,13 +196,6 @@ STRIPE_WEBHOOK_SECRET = env.str("STRIPE_WEBHOOK_SECRET", default="")
 # accepted if it was issued for one of these, so tokens for other apps cannot be replayed here.
 
 GOOGLE_CLIENT_IDS: list[str] = env.list("GOOGLE_CLIENT_IDS", default=[])
-
-# --- Internationalisation ------------------------------------------------------------------------
-
-LANGUAGE_CODE = "en-gb"
-TIME_ZONE = "Europe/London"
-USE_I18N = True
-USE_TZ = True
 
 # --- Static files --------------------------------------------------------------------------------
 

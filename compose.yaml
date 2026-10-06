@@ -17,7 +17,7 @@ services:
       interval: 2s
       retries: 15
 
-  # Holds the counters behind API rate limits and login lockouts.
+  # Holds the counters behind API rate limits and login lockouts, and the queue of background jobs.
   redis:
     image: redis:7-alpine
     ports:
@@ -27,21 +27,38 @@ services:
     build: .
     # Development server, instead of the gunicorn command in the Dockerfile.
     command: python manage.py runserver 0.0.0.0:8000
-    environment:
+    environment: &django_env
       DJANGO_SETTINGS_MODULE: config.settings.local
       # Inside compose the other services are reachable by their service names.
       DATABASE_URL: postgres://postgres:postgres@db:5432/uk_backend
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
     ports:
       - "8000:8000"
     # Mount the source code so edits apply without rebuilding the image.
-    volumes:
+    volumes: &source_code
       - .:/app
-    depends_on:
+    depends_on: &backing_services
       db:
         condition: service_healthy
       redis:
         condition: service_started
+
+  # Runs background jobs: finishing a purchase after Stripe confirms payment, and sending emails.
+  worker:
+    build: .
+    command: celery --app config worker --loglevel info
+    environment: *django_env
+    volumes: *source_code
+    depends_on: *backing_services
+
+  # Puts the scheduled jobs on the queue at their appointed times. Only ever run one of these.
+  beat:
+    build: .
+    command: celery --app config beat --loglevel info
+    environment: *django_env
+    volumes: *source_code
+    depends_on: *backing_services
 
 volumes:
   postgres_data:

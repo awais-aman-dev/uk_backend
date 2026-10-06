@@ -108,17 +108,24 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
 class TokenPurpose(models.TextChoices):
     EMAIL_VERIFICATION = "email_verification", "Email verification"
     PASSWORD_RESET = "password_reset", "Password reset"
+    EMAIL_CHANGE = "email_change", "Email change"
 
 
 class SecurityTokenManager(models.Manager["SecurityToken"]):
-    def issue(self, purpose: str, user: "User", valid_for: timedelta) -> str:
-        """Create a token and return the raw value. Only its hash is stored."""
+    def issue(self, purpose: str, user: "User", valid_for: timedelta, payload: dict | None = None) -> str:
+        """Create a token and return the raw value. Only its hash is stored.
+
+        ``payload`` carries anything the link needs when it comes back, such as the new address
+        in an email change. Keeping it on the token means an unconfirmed change is not written to
+        the account.
+        """
         raw_token = secrets.token_urlsafe(48)
         self.create(
             purpose=purpose,
             user=user,
             token_hash=hash_token(raw_token),
             expires_at=timezone.now() + valid_for,
+            payload=payload or {},
         )
         return raw_token
 
@@ -152,6 +159,7 @@ class SecurityToken(TimestampedModel):
     purpose = models.CharField(max_length=32, choices=TokenPurpose.choices)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="security_tokens")
     token_hash = models.CharField(max_length=64, unique=True)
+    payload = models.JSONField(default=dict, blank=True)
     expires_at = models.DateTimeField()
     used_at = models.DateTimeField(null=True, blank=True)
 

@@ -54,6 +54,7 @@ container start, so scaling out can't run them concurrently.
 | Google sign-in | `POST /api/auth/google/`, `POST /api/auth/google/link/` |
 | Catalogue | `GET /api/packages/`, `GET /api/packages/<slug>/` |
 | Payments | `POST /api/payments/checkout/`, `POST /api/payments/promo-codes/validate/`, `GET /api/payments/orders/<uuid>/`, `POST /api/payments/webhook/stripe/` |
+| Cabinet | `GET/PATCH /api/cabinet/profile/`, `POST /api/cabinet/email/change/`, `GET /api/cabinet/email/change/confirm/`, `POST /api/cabinet/password/change/`, `GET /api/cabinet/subscription/`, `GET /api/cabinet/learning-url/` |
 | Documentation | `/api/swagger/`, `/api/redoc/`, `/api/schema/` |
 | Admin | `/api/admin/` |
 
@@ -75,6 +76,22 @@ CLI:
 ```bash
 stripe listen --forward-to localhost:8000/api/payments/webhook/stripe/
 ```
+
+### What happens after a payment
+
+Stripe's webhook marks the order paid and queues a background job, which creates the account if
+the buyer had none, grants access, and sends a welcome email with a single-use link to choose a
+password plus a receipt. The job is safe to repeat: Stripe redelivers events, and each step checks
+whether it has already run.
+
+Access is two dates. `package_expires_at` ends learning access; `account_expires_at` is later by
+`ACCOUNT_LIFETIME_COEFFICIENT` (1.5, editable in the admin), so a lapsed customer can still sign
+in and buy again. Buying while access is live adds the new period onto the end, so nothing paid
+for is lost.
+
+Two scheduled jobs run from the `beat` service: expiry reminders at 09:00 and closing expired
+accounts at 00:30 (never staff accounts). There is deliberately no job to revoke learning access,
+because access is derived from the dates every time it is checked.
 
 ### Running without Docker
 

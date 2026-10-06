@@ -16,6 +16,10 @@ CORS_ALLOWED_ORIGINS = []
 CSRF_TRUSTED_ORIGINS = []
 FRONTEND_BASE_URL = "http://frontend.test/"
 
+# Tasks run immediately, in-process, so the suite needs no worker or queue.
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+
 # Emails are collected in django.core.mail.outbox instead of being sent.
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 

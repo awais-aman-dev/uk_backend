@@ -1,0 +1,8 @@
+Hi {{ first_name|default:"there" }},
+
+Your {{ package_name }} ends on {{ expiry_date }}. Buy again before then and your remaining days
+are added to the new package, so nothing is lost:
+
+{{ renewal_url }}
+
+The 1Theory team
