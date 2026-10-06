@@ -3,7 +3,8 @@
 from .base import *  # noqa: F403
 from .base import database, env
 
-SECRET_KEY = "test-only-not-a-secret"
+# Long enough to sign JWTs without warnings, but still obviously not a real secret.
+SECRET_KEY = "test-only-not-a-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
 
 DATABASES = {
     "default": database(env.str("DATABASE_URL", default="postgres://postgres:postgres@localhost:5432/uk_backend"))
@@ -14,6 +15,13 @@ ALLOWED_HOSTS = ["testserver"]
 CORS_ALLOWED_ORIGINS = []
 CSRF_TRUSTED_ORIGINS = []
 FRONTEND_BASE_URL = "http://frontend.test/"
+
+# Emails are collected in django.core.mail.outbox instead of being sent.
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# In-memory cache, so the test suite needs no Redis. Throttling and login lockouts still work,
+# because tests run in a single process.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 # Tests never run collectstatic; let WhiteNoise find files on demand instead of from STATIC_ROOT.
 WHITENOISE_AUTOREFRESH = True

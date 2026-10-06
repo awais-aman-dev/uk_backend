@@ -1,0 +1,19 @@
+{% extends "emails/base.html" %}
+{% block title %}Confirm your email address — 1Theory{% endblock %}
+{% block content %}
+<p style="margin:0 0 16px 0; font-size:18px; font-weight:bold; color:#1e3a5f;">
+  Please confirm your email address
+</p>
+<p style="margin:0 0 16px 0;">Hi {{ first_name|default:"there" }},</p>
+<p style="margin:0 0 28px 0;">
+  Thanks for registering with 1Theory. Please confirm your email address using the button below.
+  This link works once and expires in <strong>24 hours</strong>.
+</p>
+
+{% include "emails/_button.html" with url=verification_url label="Confirm email address" %}
+
+<p style="margin:0 0 8px 0; font-size:13px; color:#888888;">
+  If you did not create an account, you can ignore this email.
+</p>
+<p style="margin:0; font-size:14px; color:#555555;">The 1Theory team</p>
+{% endblock %}

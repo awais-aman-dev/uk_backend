@@ -45,9 +45,25 @@ The `Dockerfile` installs runtime dependencies only (`uv sync --frozen --no-dev`
 gunicorn by default; compose overrides that with `runserver`. Migrations are never run on
 container start, so scaling out can't run them concurrently.
 
+### API
+
+| Area | Paths |
+|---|---|
+| Health | `GET /api/healthcheck/` |
+| Authentication | `POST /api/auth/register/`, `login/`, `logout/`, `token/refresh/`, `password/reset/`, `password/reset/confirm/`; `GET /api/auth/email/verify/`, `POST /api/auth/email/verify/resend/` |
+| Documentation | `/api/swagger/`, `/api/redoc/`, `/api/schema/` |
+| Admin | `/api/admin/` |
+
+Clients send `Authorization: Bearer <access token>`. Access tokens last 5 minutes; refresh tokens
+last 30 days with `remember_me`, otherwise 24 hours. Refreshing returns a new refresh token and
+invalidates the old one.
+
+In local development emails are printed to the container logs rather than sent, so verification
+and password-reset links can be copied straight from `docker compose logs web`.
+
 ### Running without Docker
 
-Point `DATABASE_URL` at any PostgreSQL 16 database, then:
+Point `DATABASE_URL` at any PostgreSQL 16 database and `REDIS_URL` at a Redis instance, then:
 
 ```bash
 uv sync
