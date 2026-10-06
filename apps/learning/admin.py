@@ -24,7 +24,11 @@ from apps.learning.models import (
     AVAILABLE_CONTENT_TYPES,
     Chapter,
     ContentType,
+    ExamQuestion,
     LearningContent,
+    PracticeExam,
+    Question,
+    QuestionOption,
     Sign,
     Subchapter,
 )
@@ -56,6 +60,7 @@ class ContentForm(forms.ModelForm):
             "title",
             "slug",
             "body_html",
+            "question",
             "order",
             "only_for_packages",
             "publish_from",
@@ -127,6 +132,12 @@ class PublishableAdmin(admin.ModelAdmin):
         return actions
 
 
+def _answer_sheet(instance) -> dict | None:
+    """The answers to check, for a question or for a content item that asks one."""
+    question = instance if isinstance(instance, Question) else getattr(instance, "question", None)
+    return services.answer_sheet_for(question) if question else None
+
+
 class PreviewMixin(admin.ModelAdmin):
     """Adds a page showing material as a student would see it.
 
@@ -160,6 +171,9 @@ class PreviewMixin(admin.ModelAdmin):
                 "instance": instance,
                 "content": services.student_view_of(instance),
                 "problems": services.problems_with(instance),
+                # A question, or a content item that asks one; the template leaves the section
+                # out for anything else.
+                "answer_sheet": _answer_sheet(instance),
                 "opts": self.model._meta,
             },
         )
@@ -282,11 +296,17 @@ class LearningContentAdmin(PreviewMixin, PublishableAdmin):
     search_fields = ["title", "slug"]
     prepopulated_fields = {"slug": ("title",)}
     list_select_related = ["subchapter", "subchapter__chapter"]
-    autocomplete_fields = ["subchapter"]
+    autocomplete_fields = ["subchapter", "question"]
     filter_horizontal = ["only_for_packages"]
     fieldsets = (
         (None, {"fields": ("subchapter", "content_type", "title", "slug", "order")}),
-        ("Content", {"fields": ("body_html",)}),
+        (
+            "Content",
+            {
+                "fields": ("body_html", "question"),
+                "description": "Theory material uses the text; question material uses the question.",
+            },
+        ),
         (
             "Access",
             {
@@ -324,3 +344,98 @@ class SignAdmin(admin.ModelAdmin):
     list_filter = ["category"]
     search_fields = ["code", "name", "meaning"]
     prepopulated_fields = {"code": ("name",)}
+
+
+class QuestionOptionInline(admin.TabularInline):
+    """The answers to choose between, edited beside the question they belong to."""
+
+    model = QuestionOption
+    extra = 2
+    fields = ["order", "option_id", "text", "sign", "is_correct"]
+    ordering = ["order"]
+    autocomplete_fields = ["sign"]
+
+
+@admin.register(Question)
+class QuestionAdmin(PreviewMixin, PublishableAdmin):
+    """The question bank.
+
+    One question, used wherever it is needed. Editing it reaches every exam and subchapter that
+    refers to it, which is the point of a bank rather than copies.
+    """
+
+    list_display = ["prompt_preview", "key", "chapter", "question_type", "answer_summary", "state"]
+    list_filter = ["status", "question_type", "chapter"]
+    search_fields = ["key", "prompt", "explanation"]
+    prepopulated_fields = {"key": ("prompt",)}
+    list_select_related = ["chapter"]
+    autocomplete_fields = ["chapter", "media_sign", "learn_more"]
+    inlines = [QuestionOptionInline]
+    fieldsets = (
+        (None, {"fields": ("chapter", "key", "question_type", "prompt", "media_sign")}),
+        (
+            "After answering",
+            {
+                "fields": ("explanation", "learn_more"),
+                "description": "Shown once the student has committed to an answer.",
+            },
+        ),
+        (
+            "Publishing",
+            {"fields": ("status", "publish_from", "published_at", "published_by", "readiness", "preview_link")},
+        ),
+    )
+    readonly_fields = ["status", "published_at", "published_by", "readiness", "preview_link"]
+
+    @admin.display(description="Question", ordering="prompt")
+    def prompt_preview(self, question: Question) -> str:
+        return question.prompt[:70] + ("…" if len(question.prompt) > 70 else "")
+
+    @admin.display(description="Answers")
+    def answer_summary(self, question: Question) -> str:
+        options = question.options.all()
+        correct = sum(1 for option in options if option.is_correct)
+        return f"{len(options)} options, {correct} correct"
+
+
+class ExamQuestionInline(admin.TabularInline):
+    """Which questions an exam asks, and in what order.
+
+    The questions themselves are not edited here: an exam points at the bank, so changing a
+    question in one exam would change it everywhere.
+    """
+
+    model = ExamQuestion
+    extra = 1
+    fields = ["order", "question"]
+    ordering = ["order"]
+    autocomplete_fields = ["question"]
+
+
+@admin.register(PracticeExam)
+class PracticeExamAdmin(PublishableAdmin):
+    list_display = ["title", "kind", "question_count", "pass_mark", "order", "state"]
+    list_editable = ["order"]
+    list_filter = ["status", "kind"]
+    search_fields = ["title", "slug", "description"]
+    prepopulated_fields = {"slug": ("title",)}
+    inlines = [ExamQuestionInline]
+    fieldsets = (
+        (None, {"fields": ("title", "slug", "description", "kind", "order")}),
+        (
+            "Rules",
+            {
+                "fields": ("pass_mark", "time_limit_seconds"),
+                "description": "How many answers must be right, and how long the student has.",
+            },
+        ),
+        (
+            "Publishing",
+            {"fields": ("status", "publish_from", "published_at", "published_by", "readiness")},
+        ),
+    )
+    readonly_fields = ["status", "published_at", "published_by", "readiness"]
+
+    @admin.display(description="Questions")
+    def question_count(self, exam: PracticeExam) -> int:
+        return exam.questions.count()

@@ -82,6 +82,10 @@ def can_view(user: User, content, at=None) -> bool:
     if chapter is not None:
         owners.append(chapter)
 
+    # A question carries no gate of its own: it follows the chapter it belongs to, so it cannot
+    # fall out of step with the material it is testing.
+    owners = [owner for owner in owners if hasattr(owner, "only_for_packages")]
+
     for owner in owners:
         required = {package.pk for package in owner.only_for_packages.all()}
         if required and package_id not in required:
@@ -113,6 +117,18 @@ def visible_subchapters(user: User, queryset, at=None):
 
     package_id = package_of(user)
     return queryset.filter(_allows(package_id), _allows(package_id, "chapter__")).distinct()
+
+
+def visible_questions(user: User, queryset, at=None):
+    """Narrow a queryset of questions to what this person may practise.
+
+    A question belongs to a chapter, and a package that excludes the chapter excludes its
+    questions too, so a student is never asked about material they cannot read.
+    """
+    if not has_access(user, at):
+        return queryset.none()
+
+    return queryset.filter(_allows(package_of(user), "chapter__")).distinct()
 
 
 def visible_chapters(user: User, queryset, at=None):

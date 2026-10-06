@@ -22,6 +22,9 @@ from apps.learning.models import (
     Chapter,
     ContentType,
     LearningContent,
+    PracticeExam,
+    Question,
+    QuestionType,
     Subchapter,
 )
 from apps.staff.authz import require_permission
@@ -77,6 +80,10 @@ def problems_with(instance) -> list[str]:
         return _problems_with_subchapter(instance)
     if isinstance(instance, LearningContent):
         return _problems_with_content(instance)
+    if isinstance(instance, Question):
+        return problems_with_question(instance)
+    if isinstance(instance, PracticeExam):
+        return problems_with_exam(instance)
     return []
 
 
@@ -96,12 +103,62 @@ def _problems_with_subchapter(subchapter: Subchapter) -> list[str]:
     return problems
 
 
+def problems_with_question(question: Question) -> list[str]:
+    """What would make a question unusable for a student."""
+    problems = []
+    options = list(question.options.all())
+    correct = [option for option in options if option.is_correct]
+
+    if len(options) < 2:
+        problems.append("A question needs at least two answers to choose between.")
+
+    if question.question_type == QuestionType.MULTI:
+        if len(correct) < 2:
+            problems.append("A question with several answers needs at least two of them marked correct.")
+    elif len(correct) != 1:
+        # Without exactly one, the frontend cannot tell the student what the answer was.
+        problems.append("Exactly one answer must be marked correct.")
+
+    if question.question_type == QuestionType.IMAGE and any(option.sign_id is None for option in options):
+        problems.append("Every answer needs a road sign, because this question is answered with signs.")
+
+    if not question.prompt.strip():
+        problems.append("There is no question text yet.")
+
+    return problems
+
+
+def problems_with_exam(exam: PracticeExam) -> list[str]:
+    """What would make an exam unusable."""
+    problems = []
+    questions = list(exam.questions.all())
+
+    if not questions:
+        problems.append("This exam has no questions yet.")
+
+    drafts = [question for question in questions if not question.is_published]
+    if drafts:
+        # Naming them, so staff can go and fix the right ones.
+        listed = ", ".join(question.key for question in drafts[:5])
+        problems.append(f"Some questions are not published yet: {listed}.")
+
+    if exam.pass_mark > len(questions):
+        problems.append(f"The pass mark is {exam.pass_mark} but there are only {len(questions)} questions.")
+
+    return problems
+
+
 def _problems_with_content(content: LearningContent) -> list[str]:
     problems = []
 
     if content.content_type not in AVAILABLE_CONTENT_TYPES:
         kind = ContentType(content.content_type).label
         problems.append(f"{kind} material cannot be served yet, so it cannot be published.")
+    elif content.content_type == ContentType.QUESTION:
+        if content.question is None:
+            problems.append("No question has been chosen from the bank.")
+        elif not content.question.is_published:
+            problems.append(f"The question '{content.question.key}' is not published yet.")
     elif html.is_empty(content.body_html):
         problems.append("There is no content yet.")
 
@@ -209,6 +266,15 @@ def student_view_of(instance) -> dict:
             "blocks": [block_for(instance)],
         }
 
+    if isinstance(instance, Question):
+        # A question has no body to render, so the preview page shows the answer sheet instead.
+        return {
+            "slug": instance.key,
+            "title": instance.prompt,
+            "summary": "",
+            "blocks": [],
+        }
+
     return {
         "slug": instance.slug,
         "title": instance.title,
@@ -217,10 +283,78 @@ def student_view_of(instance) -> dict:
     }
 
 
+def answer_sheet_for(question: Question) -> dict:
+    """A question with its answers marked, for staff checking it before publishing.
+
+    Deliberately a separate function from :func:`student_view_of_question`, which never carries
+    the answer, so a page meant for staff cannot be wired to students by mistake.
+    """
+    return {
+        "prompt": question.prompt,
+        "sign": question.media_sign.code if question.media_sign else "",
+        "explanation": question.explanation,
+        "learn_more": question.learn_more.title if question.learn_more else "",
+        "options": [
+            {
+                "id": option.option_id,
+                "text": option.text,
+                "sign": option.sign.code if option.sign else "",
+                "is_correct": option.is_correct,
+            }
+            for option in question.options.all()
+        ],
+    }
+
+
 def block_for(content: LearningContent) -> dict:
     """One content item as the frontend reads it.
 
-    The frontend takes content as a list of blocks, so theory is served as a single HTML block:
-    the shape it already expects, needing one renderer rather than one per kind of material.
+    The frontend takes content as a list of blocks, so theory is served as a single HTML block and
+    a question as a check block naming the question. Both are shapes the frontend already renders,
+    so neither needs a new renderer.
     """
+    if content.content_type == ContentType.QUESTION and content.question:
+        return {"type": "check", "questions": [content.question.key], "title": content.title}
     return {"type": "html", "html": content.body_html, "title": content.title}
+
+
+def student_view_of_question(question: Question) -> dict:
+    """A question as a student sees it before answering.
+
+    Built without ``is_correct``: the answer is not in the payload at all, rather than being sent
+    and hidden by the frontend.
+    """
+    return {
+        "id": question.pk,
+        "key": question.key,
+        "topic": question.chapter.slug,
+        "type": question.question_type,
+        "prompt": question.prompt,
+        "media": {"kind": "sign", "code": question.media_sign.code} if question.media_sign else None,
+        "options": [
+            {
+                "id": option.option_id,
+                **({"text": option.text} if option.text else {}),
+                **({"sign": option.sign.code} if option.sign else {}),
+            }
+            for option in question.options.all()
+        ],
+        "pick": question.pick,
+    }
+
+
+def mark_answer(question: Question, selected: list[str]) -> dict:
+    """Mark an answer, which is the only place correctness is decided.
+
+    Marking happens here rather than in the browser, so the answer is never in the page before
+    the student commits to one.
+    """
+    correct_ids = question.correct_option_ids
+    return {
+        "correct": sorted(selected) == sorted(correct_ids),
+        "correctIds": correct_ids,
+        "explanation": question.explanation,
+        "lesson": (
+            {"slug": question.learn_more.slug, "title": question.learn_more.title} if question.learn_more else None
+        ),
+    }

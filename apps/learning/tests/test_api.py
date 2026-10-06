@@ -24,6 +24,8 @@ pytestmark = pytest.mark.django_db
 TOPICS_URL = reverse("learn-topics")
 SIGNS_URL = reverse("learn-signs")
 EBOOK_URL = reverse("learn-ebook")
+PRACTICE_URL = reverse("learn-practice")
+ANSWER_URL = reverse("learn-answer")
 
 
 def lesson_url(slug: str) -> str:
@@ -287,3 +289,192 @@ class TestSigns:
 
     def test_signed_out_visitors_are_refused(self, api, sign):
         assert api.get(SIGNS_URL).status_code == 401
+
+
+@pytest.fixture
+def live_question(make_question, chapter, publisher):
+    """A published question in a published chapter, ready to be practised."""
+    from apps.learning import services
+
+    chapter.status = PublishStatus.PUBLISHED
+    chapter.save(update_fields=["status"])
+    question = make_question()
+    services.publish(actor=publisher, instance=question)
+    question.refresh_from_db()
+    return question
+
+
+class TestPractice:
+    def test_a_student_gets_a_set_of_questions(self, api, student, live_question):
+        response = sign_in(api, student()).get(PRACTICE_URL)
+
+        assert response.status_code == 200
+        assert [question["key"] for question in response.data["questions"]] == ["distraction"]
+
+    def test_the_answers_are_not_in_the_response(self, api, student, live_question):
+        """The whole point: a student cannot read the answer out of the page they are given."""
+        response = sign_in(api, student()).get(PRACTICE_URL)
+
+        assert "is_correct" not in str(response.data)
+
+    def test_somebody_without_a_plan_is_asked_to_buy_one(self, api, live_question, db):
+        browsing = User.objects.create_user(email="browsing@example.com", first_name="Bo")
+
+        assert sign_in(api, browsing).get(PRACTICE_URL).status_code == 402
+
+    def test_draft_questions_are_never_served(self, api, student, make_question, chapter):
+        chapter.status = PublishStatus.PUBLISHED
+        chapter.save(update_fields=["status"])
+        make_question(key="unfinished")
+
+        response = sign_in(api, student()).get(PRACTICE_URL)
+
+        assert response.data["questions"] == []
+
+    def test_a_question_from_another_package_is_not_served(self, api, student, live_question, packages):
+        """A question's package follows from its chapter, so gating the chapter gates the question."""
+        live_question.chapter.only_for_packages.add(packages["premium"])
+
+        response = sign_in(api, student("starter")).get(PRACTICE_URL)
+
+        assert response.data["questions"] == []
+
+    def test_practising_one_topic_asks_only_about_that_topic(self, api, student, live_question, publisher):
+        from apps.learning import services
+
+        other = Chapter.objects.create(slug="motorways", title="Motorways", status=PublishStatus.PUBLISHED, order=2)
+        elsewhere = make_second_question(other)
+        services.publish(actor=publisher, instance=elsewhere)
+
+        response = sign_in(api, student()).get(PRACTICE_URL, {"mode": "topic", "topic": "road-signs"})
+
+        assert [question["key"] for question in response.data["questions"]] == ["distraction"]
+
+    def test_practising_an_unknown_topic_is_not_found(self, api, student, live_question):
+        response = sign_in(api, student()).get(PRACTICE_URL, {"mode": "topic", "topic": "no-such-topic"})
+
+        assert response.status_code == 404
+
+    def test_a_silly_count_is_brought_back_into_range(self, api, student, live_question):
+        """Whatever the query string asks for, nobody gets to ask for ten thousand questions."""
+        response = sign_in(api, student()).get(PRACTICE_URL, {"count": "10000"})
+
+        assert response.status_code == 200
+
+    def test_a_count_that_is_not_a_number_is_ignored(self, api, student, live_question):
+        response = sign_in(api, student()).get(PRACTICE_URL, {"count": "lots"})
+
+        assert response.status_code == 200
+        assert len(response.data["questions"]) == 1
+
+    def test_the_signs_a_question_mentions_come_with_it(self, api, student, live_question, sign):
+        """So the frontend can draw them without a second request."""
+        live_question.media_sign = sign
+        live_question.save(update_fields=["media_sign"])
+
+        response = sign_in(api, student()).get(PRACTICE_URL)
+
+        assert response.data["signs"]["give-way"]["name"] == "Give way"
+
+
+def make_second_question(chapter):
+    from apps.learning.models import Question, QuestionOption
+
+    question = Question.objects.create(chapter=chapter, key="lanes", prompt="Which lane?")
+    for order, option_id in enumerate(("a", "b"), start=1):
+        QuestionOption.objects.create(
+            question=question, option_id=option_id, text=option_id, is_correct=option_id == "a", order=order
+        )
+    return question
+
+
+class TestAnswering:
+    def test_a_right_answer_is_marked_right(self, api, student, live_question):
+        response = sign_in(api, student()).post(
+            ANSWER_URL, {"questionId": live_question.pk, "selected": ["a"]}, format="json"
+        )
+
+        assert response.status_code == 200
+        assert response.data["correct"] is True
+
+    def test_a_wrong_answer_is_told_what_the_answer_was(self, api, student, live_question):
+        response = sign_in(api, student()).post(
+            ANSWER_URL, {"questionId": live_question.pk, "selected": ["c"]}, format="json"
+        )
+
+        assert response.data["correct"] is False
+        assert response.data["correctIds"] == ["a"]
+
+    def test_marking_happens_on_the_server(self, api, student, live_question):
+        """Claiming to be right does not make it so: only the option ids are read."""
+        response = sign_in(api, student()).post(
+            ANSWER_URL,
+            {"questionId": live_question.pk, "selected": ["c"], "correct": True},
+            format="json",
+        )
+
+        assert response.data["correct"] is False
+
+    def test_an_unknown_question_is_not_found(self, api, student):
+        response = sign_in(api, student()).post(ANSWER_URL, {"questionId": 9999, "selected": ["a"]}, format="json")
+
+        assert response.status_code == 404
+
+    def test_a_draft_question_cannot_be_answered(self, api, student, make_question, chapter):
+        chapter.status = PublishStatus.PUBLISHED
+        chapter.save(update_fields=["status"])
+        draft = make_question(key="unfinished")
+
+        response = sign_in(api, student()).post(ANSWER_URL, {"questionId": draft.pk, "selected": ["a"]}, format="json")
+
+        assert response.status_code == 404
+
+    def test_a_question_outside_the_package_cannot_be_answered(self, api, student, live_question, packages):
+        live_question.chapter.only_for_packages.add(packages["premium"])
+
+        response = sign_in(api, student("starter")).post(
+            ANSWER_URL, {"questionId": live_question.pk, "selected": ["a"]}, format="json"
+        )
+
+        assert response.status_code == 404
+
+    def test_somebody_without_a_plan_is_asked_to_buy_one(self, api, live_question, db):
+        browsing = User.objects.create_user(email="browsing@example.com", first_name="Bo")
+
+        response = sign_in(api, browsing).post(
+            ANSWER_URL, {"questionId": live_question.pk, "selected": ["a"]}, format="json"
+        )
+
+        assert response.status_code == 402
+
+    def test_nonsense_instead_of_a_list_of_answers_is_refused(self, api, student, live_question):
+        response = sign_in(api, student()).post(
+            ANSWER_URL, {"questionId": live_question.pk, "selected": "a"}, format="json"
+        )
+
+        assert response.status_code == 400
+
+
+class TestQuestionsInsideALesson:
+    def test_a_lesson_sends_its_check_questions_with_the_blocks(
+        self, api, student, live_tree, subchapter, live_question, publisher
+    ):
+        """One response holds the lesson and everything it needs to ask."""
+        from apps.learning import services
+
+        item = LearningContent.objects.create(
+            subchapter=subchapter,
+            slug="check-yourself",
+            title="Check yourself",
+            content_type="question",
+            question=live_question,
+            order=2,
+        )
+        services.publish(actor=publisher, instance=item)
+
+        response = sign_in(api, student()).get(lesson_url(subchapter.slug))
+
+        blocks = response.data["lesson"]["blocks"]
+        assert blocks[1] == {"type": "check", "questions": ["distraction"], "title": "Check yourself"}
+        assert response.data["questions"]["distraction"]["prompt"].startswith("Which of these")
+        assert "is_correct" not in str(response.data)

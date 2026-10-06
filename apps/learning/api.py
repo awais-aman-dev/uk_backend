@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import User
 from apps.entitlements import services as entitlements
 from apps.learning import services
-from apps.learning.models import Chapter, Sign, Subchapter
+from apps.learning.models import Chapter, Question, Sign, Subchapter
 
 PLAN_NEEDED = "An active plan is needed for this"
 HIGHWAY_CODE_SLUG = "highway-code"
@@ -138,10 +138,20 @@ class LessonDetailView(APIView):
                 "prev": _link(neighbours, position, -1),
                 "next": _link(neighbours, position, 1),
                 "signs": {},
-                "questions": {},
+                "questions": _questions_in(content),
                 "clips": {},
             }
         )
+
+
+def _questions_in(content) -> dict:
+    """The questions a lesson's check blocks name, by key.
+
+    Sent alongside the blocks so the frontend has everything in one response, and without the
+    answers: those only arrive once the student has committed to one.
+    """
+    questions = [item.question for item in content if item.question_id and item.question.is_published]
+    return {question.key: services.student_view_of_question(question) for question in questions}
 
 
 def _link(neighbours: list, position: int | None, step: int) -> dict | None:
@@ -248,3 +258,94 @@ class SignListView(APIView):
 
         signs = Sign.objects.all().order_by("category", "order", "name")
         return Response({"signs": list(sign_map(signs.values_list("code", flat=True)).values())})
+
+
+class PracticeSetView(APIView):
+    """A set of questions to practise with, without their answers."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="getPracticeSet",
+        summary="Get a set of practice questions",
+        responses={200: dict, 402: dict, 404: dict},
+    )
+    def get(self, request: Request) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        mode = request.query_params.get("mode", "random")
+        count = _count_from(request.query_params.get("count"))
+
+        questions = services.live(Question.objects.select_related("chapter").prefetch_related("options"))
+        questions = entitlements.visible_questions(student, questions)
+
+        if mode == "topic":
+            topic = request.query_params.get("topic")
+            if not Chapter.objects.filter(slug=topic).exists():
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            questions = questions.filter(chapter__slug=topic)
+
+        # The modes that depend on what a student has done before — mistakes, weak, saved,
+        # review — need the progress that is not recorded yet, so they practise everything.
+        chosen = list(questions.order_by("?")[:count])
+
+        return Response(
+            {
+                "questions": [services.student_view_of_question(question) for question in chosen],
+                "signs": sign_map(_sign_codes_in(chosen)),
+                "saved": [],
+            }
+        )
+
+
+def _count_from(raw: str | None) -> int:
+    """How many questions to send back, kept inside sensible bounds whatever was asked for."""
+    try:
+        count = int(raw) if raw else 10
+    except ValueError:
+        count = 10
+    return max(1, min(count, 50))
+
+
+def _sign_codes_in(questions: list) -> set[str]:
+    """Every sign a set of questions mentions, so the frontend can draw them all."""
+    codes = set()
+    for question in questions:
+        if question.media_sign_id:
+            codes.add(question.media_sign.code)
+        codes.update(option.sign.code for option in question.options.all() if option.sign_id)
+    return codes
+
+
+class AnswerView(APIView):
+    """Mark an answer and reveal what the right one was."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="checkAnswer",
+        summary="Check an answer",
+        request=dict,
+        responses={200: dict, 402: dict, 404: dict},
+    )
+    def post(self, request: Request) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        question = (
+            services.live(Question.objects.prefetch_related("options"))
+            .filter(pk=request.data.get("questionId"))
+            .first()
+        )
+        if question is None or not entitlements.can_view(student, question):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        selected = request.data.get("selected") or []
+        if not isinstance(selected, list):
+            return Response({"detail": "selected must be a list of option ids."}, status=400)
+
+        # Marked on the server: the answer was never in the page for the student to read.
+        return Response(services.mark_answer(question, [str(option) for option in selected]))

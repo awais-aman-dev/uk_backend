@@ -9,4 +9,6 @@ urlpatterns = [
     path("learn/ebook/", api.EbookView.as_view(), name="learn-ebook"),
     path("learn/ebook/<slug:slug>/", api.EbookChapterView.as_view(), name="learn-ebook-chapter"),
     path("learn/signs/", api.SignListView.as_view(), name="learn-signs"),
+    path("learn/practice/", api.PracticeSetView.as_view(), name="learn-practice"),
+    path("learn/answer/", api.AnswerView.as_view(), name="learn-answer"),
 ]
