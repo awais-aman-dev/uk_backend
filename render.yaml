@@ -1,0 +1,106 @@
+# Render blueprint for the develop/dev site, on the free tier.
+#
+# Free-tier limits that shape this file:
+#   - there is no Background Worker service type, so the Celery worker and beat scheduler run
+#     inside the web container (see scripts/render-start.sh), not as their own services;
+#   - the web service sleeps after 15 minutes without traffic and takes ~1 minute to wake, which
+#     Stripe webhooks and the nightly scheduled jobs both notice (see the notes at the bottom);
+#   - one free Postgres instance is deleted 30 days after it is created;
+#   - there is no shell and no pre-deploy command, so migrate and sync_roles run at start-up;
+#   - 512 MB of RAM for everything, hence one gunicorn worker and a single-process Celery worker.
+#
+# Secrets are marked `sync: false`: Render prompts for them and they are never stored in git.
+
+services:
+  - type: web
+    name: uk-backend-dev
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: develop
+    # CI gates the deploy instead: .github/workflows/ci.yml calls the deploy hook once the
+    # checks pass, so a merge that breaks the tests never reaches the dev site.
+    # Quoted, because YAML would otherwise read a bare `off` as the boolean false.
+    autoDeployTrigger: "off"
+    dockerfilePath: ./Dockerfile
+    # Invoked through bash, so the deploy does not depend on the file's executable bit.
+    dockerCommand: bash ./scripts/render-start.sh
+    healthCheckPath: /api/healthcheck/
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: ENVIRONMENT
+        value: develop
+      - key: SECRET_KEY
+        generateValue: true
+
+      # --- Processes ---------------------------------------------------------------------------
+      # Both exist only because the free plan has no Background Worker service.
+      - key: RUN_WORKER_IN_WEB
+        value: true
+      - key: WEB_CONCURRENCY
+        value: 1
+
+      # --- Backing services -------------------------------------------------------------------
+      - key: DATABASE_URL
+        fromDatabase:
+          name: uk-backend-dev-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: uk-backend-dev-cache
+          property: connectionString
+      # Locally the broker is database 1 and the cache database 0. One free Key Value instance
+      # cannot be split that way here, so both share it; Django prefixes its cache keys and
+      # Celery uses its own, so they do not collide.
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: uk-backend-dev-cache
+          property: connectionString
+
+      # --- Hosts and origins ------------------------------------------------------------------
+      # Must match this service's own hostname. Update if Render appends a suffix to the name.
+      - key: ALLOWED_HOSTS
+        value: uk-backend-dev.onrender.com
+      - key: FRONTEND_BASE_URL
+        value: https://1theory-demo.vercel.app/
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://1theory-demo.vercel.app
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://1theory-demo.vercel.app,https://uk-backend-dev.onrender.com
+
+      # --- Secrets ----------------------------------------------------------------------------
+      # Postmark SMTP: the server token goes in both. production.py reads them with no default,
+      # so the service will not start until they are set.
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      # Also read with no default. Use test-mode keys here.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      # The signing secret of the Stripe webhook endpoint pointing at this service.
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Blank is valid; Google sign-in stays refused until it is set.
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
+
+  # Cache, rate-limit counters, login lockouts, and the Celery queue.
+  - type: keyvalue
+    name: uk-backend-dev-cache
+    plan: free
+    region: frankfurt
+    # noeviction, not allkeys-lru: this instance is also the Celery broker, and an eviction
+    # policy would let Redis drop queued tasks under memory pressure. The cache entries and
+    # rate-limit counters all carry their own TTLs, so nothing here grows without bound.
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+databases:
+  - name: uk-backend-dev-db
+    databaseName: uk_backend
+    plan: free
+    region: frankfurt
