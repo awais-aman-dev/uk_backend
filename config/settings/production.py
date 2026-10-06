@@ -29,6 +29,13 @@ CACHES = {
     }
 }
 
+CELERY_BROKER_URL = env.str("CELERY_BROKER_URL")
+
+# Required here, not merely defaulted: a deployment that cannot take payments, or cannot verify
+# that a webhook came from Stripe, should fail at startup rather than at a customer's checkout.
+STRIPE_SECRET_KEY = env.str("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = env.str("STRIPE_WEBHOOK_SECRET")
+
 # --- Email ---------------------------------------------------------------------------------------
 # Postmark is the mail provider; these are its SMTP settings (username and password are both the
 # Postmark server token). Any other SMTP provider works with the same four variables.

@@ -1,0 +1,10 @@
+Hi {{ first_name|default:"there" }},
+
+Thanks for your purchase. Your account is ready — choose a password using this link and you can
+start studying straight away:
+
+{{ setup_url }}
+
+The link works once and expires in 7 days. You will sign in with {{ email }}.
+
+The 1Theory team

@@ -1,0 +1,32 @@
+{% extends "emails/base.html" %}
+{% block title %}Your order has been confirmed — 1Theory{% endblock %}
+{% block content %}
+<p style="margin:0 0 16px 0; font-size:18px; font-weight:bold; color:#1e3a5f;">Your order has been confirmed</p>
+<p style="margin:0 0 16px 0;">Hi {{ first_name|default:"there" }},</p>
+<p style="margin:0 0 24px 0;">Thanks for your payment. Here is what you bought:</p>
+
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+       style="margin:0 0 28px 0; font-size:15px;">
+  <tr>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb;">Package</td>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><strong>{{ package_name }}</strong></td>
+  </tr>
+  <tr>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb;">Access</td>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;">{{ duration_days }} days</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb;">Total paid</td>
+    <td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;"><strong>&pound;{{ amount }}</strong></td>
+  </tr>
+  <tr>
+    <td style="padding:8px 0;">Order reference</td>
+    <td style="padding:8px 0; text-align:right; font-size:13px; color:#888888;">{{ order_id }}</td>
+  </tr>
+</table>
+
+<p style="margin:0 0 8px 0; font-size:13px; color:#888888;">
+  Keep this email for your records. Quote the order reference if you contact support.
+</p>
+<p style="margin:0; font-size:14px; color:#555555;">The 1Theory team</p>
+{% endblock %}

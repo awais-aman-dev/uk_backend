@@ -128,6 +128,12 @@ class Order(TimestampedModel):
 
     paid_at = models.DateTimeField(null=True, blank=True)
 
+    # Set when this purchase created the account, so a retry still knows a welcome email is owed
+    # even though the account exists by then.
+    welcome_email_required = models.BooleanField(default=False)
+    welcome_email_sent_at = models.DateTimeField(null=True, blank=True)
+    confirmation_email_sent_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["email"])]

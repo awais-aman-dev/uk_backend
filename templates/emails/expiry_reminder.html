@@ -1,0 +1,14 @@
+{% extends "emails/base.html" %}
+{% block title %}Your access expires in 3 days — 1Theory{% endblock %}
+{% block content %}
+<p style="margin:0 0 16px 0; font-size:18px; font-weight:bold; color:#1e3a5f;">Your access expires soon</p>
+<p style="margin:0 0 16px 0;">Hi {{ first_name|default:"there" }},</p>
+<p style="margin:0 0 28px 0;">
+  Your <strong>{{ package_name }}</strong> ends on <strong>{{ expiry_date }}</strong>. Buy again
+  before then and your remaining days are added to the new package, so nothing is lost.
+</p>
+
+{% include "emails/_button.html" with url=renewal_url label="Extend my access" %}
+
+<p style="margin:0; font-size:14px; color:#555555;">The 1Theory team</p>
+{% endblock %}

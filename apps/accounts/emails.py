@@ -33,6 +33,20 @@ def send_password_reset(user, token: str) -> None:
     )
 
 
+def send_email_change_confirmation(user, new_email: str, token: str) -> None:
+    """Sent to the address being added, which is what proves the person owns it."""
+    email.send(
+        template="email_change",
+        subject="Confirm your new email address",
+        to=new_email,
+        context={
+            "first_name": user.first_name,
+            "new_email": new_email,
+            "confirmation_url": f"{settings.FRONTEND_BASE_URL}account/email/confirm?token={token}",
+        },
+    )
+
+
 def send_password_changed(user) -> None:
     email.send(
         template="password_changed",

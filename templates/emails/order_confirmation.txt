@@ -1,0 +1,12 @@
+Hi {{ first_name|default:"there" }},
+
+Thanks for your payment. Here is what you bought:
+
+Package:         {{ package_name }}
+Access:          {{ duration_days }} days
+Total paid:      GBP {{ amount }}
+Order reference: {{ order_id }}
+
+Keep this email for your records. Quote the order reference if you contact support.
+
+The 1Theory team

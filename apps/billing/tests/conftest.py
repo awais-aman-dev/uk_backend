@@ -47,6 +47,14 @@ def order(package):
 
 
 @pytest.fixture
+def user_with_password(db):
+    """Somebody who already had an account before buying."""
+    from apps.accounts.models import User
+
+    return User.objects.create_user(email="buyer@example.com", password="Riverbank42", first_name="Bea")
+
+
+@pytest.fixture
 def make_promo_code(db):
     def factory(**fields):
         fields.setdefault("code", "PROMO")

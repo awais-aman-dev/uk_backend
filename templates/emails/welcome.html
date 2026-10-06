@@ -1,0 +1,17 @@
+{% extends "emails/base.html" %}
+{% block title %}Welcome to 1Theory{% endblock %}
+{% block content %}
+<p style="margin:0 0 16px 0; font-size:18px; font-weight:bold; color:#1e3a5f;">Welcome to 1Theory</p>
+<p style="margin:0 0 16px 0;">Hi {{ first_name|default:"there" }},</p>
+<p style="margin:0 0 28px 0;">
+  Thanks for your purchase. Your account is ready — choose a password using the button below and
+  you can start studying straight away. This link works once and expires in <strong>7 days</strong>.
+</p>
+
+{% include "emails/_button.html" with url=setup_url label="Choose your password" %}
+
+<p style="margin:0 0 8px 0; font-size:13px; color:#888888;">
+  You will sign in with <strong>{{ email }}</strong>.
+</p>
+<p style="margin:0; font-size:14px; color:#555555;">The 1Theory team</p>
+{% endblock %}

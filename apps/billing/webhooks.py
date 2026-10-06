@@ -96,8 +96,25 @@ def _mark_paid(session: dict) -> None:
         )
 
     logger.info("Order %s is paid", order_id)
-    # Next: the customer's account, subscription and emails. Added with fulfilment, which needs
-    # background processing; until then a paid order grants nothing by itself.
+
+    # Queued only once the transaction has committed, so the worker cannot read the order before
+    # the paid status is visible to it.
+    transaction.on_commit(lambda: _queue_fulfilment(str(order_id)))
+
+
+def _queue_fulfilment(order_id: str) -> None:
+    """Hand the paid order to a worker, falling back to doing it here if the queue is down.
+
+    The customer has paid, so the work has to happen either way; a slow webhook response is a far
+    smaller problem than a purchase that grants nothing.
+    """
+    from apps.billing.tasks import fulfil_order
+
+    try:
+        fulfil_order.delay(order_id)
+    except Exception:
+        logger.exception("Could not queue fulfilment for order %s, doing it now instead", order_id)
+        fulfil_order.apply(args=(order_id,))
 
 
 def _mark_failed(session: dict) -> None:

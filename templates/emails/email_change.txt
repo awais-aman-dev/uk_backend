@@ -1,0 +1,13 @@
+Hi {{ first_name|default:"there" }},
+
+You asked to use {{ new_email }} for your 1Theory account. Confirm it with this link and it
+becomes the address you sign in with:
+
+{{ confirmation_url }}
+
+The link works once and expires in 24 hours. Until you confirm, nothing changes and you keep
+signing in with your current address.
+
+If you did not ask for this, you can ignore this email.
+
+The 1Theory team

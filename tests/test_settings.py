@@ -23,6 +23,9 @@ PRODUCTION_ENV = {
     "REDIS_URL": "redis://redis.invalid:6379/0",
     "EMAIL_HOST_USER": "postmark-server-token",
     "EMAIL_HOST_PASSWORD": "postmark-server-token",
+    "CELERY_BROKER_URL": "redis://redis.invalid:6379/1",
+    "STRIPE_SECRET_KEY": "sk_test_not_a_real_key",
+    "STRIPE_WEBHOOK_SECRET": "whsec_not_a_real_secret",
 }
 
 # Variables with no safe default: production settings must refuse to start without them.

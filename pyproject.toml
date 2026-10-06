@@ -19,6 +19,7 @@ dependencies = [
     "google-auth>=2.60.0",
     "requests>=2.34.2",
     "stripe>=16.0.0",
+    "celery>=5.6.3",
 ]
 
 [dependency-groups]
@@ -30,6 +31,7 @@ dev = [
     "pytest-django>=4.11",
     "djangorestframework-stubs[compatible-mypy]>=3.16.9",
     "types-requests>=2.33.0.20261006",
+    "celery-types>=0.26.0",
 ]
 
 [tool.uv]
@@ -75,7 +77,7 @@ check_untyped_defs = true
 exclude = ["/migrations/"]
 
 [[tool.mypy.overrides]]
-module = ["environ.*", "constance.*", "corsheaders.*"]
+module = ["environ", "environ.*", "constance", "constance.*", "corsheaders.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]

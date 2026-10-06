@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.accounts import views
+from apps.accounts import cabinet_views, views
 
 urlpatterns = [
     path("auth/register/", views.RegisterView.as_view(), name="auth-register"),
@@ -17,4 +17,15 @@ urlpatterns = [
         views.PasswordResetConfirmView.as_view(),
         name="auth-password-reset-confirm",
     ),
+    # The customer's own account area.
+    path("cabinet/profile/", cabinet_views.ProfileView.as_view(), name="cabinet-profile"),
+    path("cabinet/email/change/", cabinet_views.EmailChangeRequestView.as_view(), name="cabinet-email-change"),
+    path(
+        "cabinet/email/change/confirm/",
+        cabinet_views.EmailChangeConfirmView.as_view(),
+        name="cabinet-email-change-confirm",
+    ),
+    path("cabinet/password/change/", cabinet_views.PasswordChangeView.as_view(), name="cabinet-password-change"),
+    path("cabinet/subscription/", cabinet_views.SubscriptionStatusView.as_view(), name="cabinet-subscription"),
+    path("cabinet/learning-url/", cabinet_views.LearningUrlView.as_view(), name="cabinet-learning-url"),
 ]

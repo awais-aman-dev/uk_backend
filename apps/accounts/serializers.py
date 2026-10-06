@@ -3,6 +3,8 @@ import re
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from apps.accounts.models import User
+
 
 def validate_password_policy(value: str) -> str:
     """At least 8 characters, one uppercase letter and one digit, plus Django's own checks.
@@ -77,6 +79,47 @@ class PasswordResetConfirmSerializer(ConfirmedPasswordSerializer):
     token = serializers.CharField()
     password = PasswordField()
     confirm_password = serializers.CharField(write_only=True)
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    """The customer's own details. The email address is changed through its own flow, not here."""
+
+    has_google_auth = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = ["email", "first_name", "last_name", "phone", "has_google_auth", "email_verified"]
+        read_only_fields = ["email", "email_verified"]
+
+
+class EmailChangeSerializer(serializers.Serializer):
+    new_email = serializers.EmailField()
+
+    def validate_new_email(self, value: str) -> str:
+        return value.lower()
+
+
+class PasswordChangeSerializer(ConfirmedPasswordSerializer):
+    current_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    password = PasswordField()
+    confirm_password = serializers.CharField(write_only=True)
+
+
+class SubscriptionStatusSerializer(serializers.Serializer):
+    """Read by the cabinet. Every key is always present, null when there is nothing to report."""
+
+    has_subscription = serializers.BooleanField()
+    package_name = serializers.CharField(allow_null=True)
+    package_expires_at = serializers.DateTimeField(allow_null=True)
+    account_expires_at = serializers.DateTimeField(allow_null=True)
+    status = serializers.CharField(allow_null=True)
+    online_platform_activated = serializers.BooleanField()
+    purchase_date = serializers.DateTimeField(allow_null=True)
+    days_remaining = serializers.IntegerField(allow_null=True)
+
+
+class LearningUrlSerializer(serializers.Serializer):
+    url = serializers.URLField()
 
 
 # --- Response shapes, declared so the OpenAPI schema documents them ------------------------------
