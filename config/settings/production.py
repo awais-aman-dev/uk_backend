@@ -22,11 +22,6 @@ DATABASES = {"default": database(env.str("DATABASE_URL"))}
 
 FRONTEND_BASE_URL = with_trailing_slash(env.str("FRONTEND_BASE_URL"))
 
-STORAGES = {
-    **STORAGES,  # noqa: F405
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-}
-
 # --- HTTPS ---------------------------------------------------------------------------------------
 # TLS terminates at the load balancer, which forwards the original scheme in X-Forwarded-Proto.
 

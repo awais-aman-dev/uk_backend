@@ -11,6 +11,7 @@ dependencies = [
     "django-constance>=4.3",
     "psycopg[binary]>=3.2",
     "whitenoise>=6.9",
+    "gunicorn>=26.2.0",
 ]
 
 [dependency-groups]
@@ -72,7 +73,8 @@ ignore_missing_imports = true
 django_settings_module = "config.settings.test"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.test"
 testpaths = ["apps", "tests"]
 python_files = ["test_*.py", "tests.py"]
-addopts = "-ra --strict-markers"
+# --ds rather than the DJANGO_SETTINGS_MODULE ini key: pytest-django lets an exported
+# DJANGO_SETTINGS_MODULE (set in compose.yaml, or by a developer) override the ini key, but not --ds.
+addopts = "-ra --strict-markers --ds=config.settings.test"

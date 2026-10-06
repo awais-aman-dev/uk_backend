@@ -103,7 +103,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    # WhiteNoise serves static files from the app itself and stores a gzipped copy of each file
+    # next to it during `collectstatic`. The same backend is used in every environment, so the
+    # files collected when the Docker image is built are exactly what a deployed container serves.
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
 
 # --- URLs ----------------------------------------------------------------------------------------
