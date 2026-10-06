@@ -16,7 +16,6 @@ from apps.billing.serializers import (
     CheckoutResponseSerializer,
     CheckoutSerializer,
     OrderStatusSerializer,
-    PromoCodeInvalidSerializer,
     PromoCodeValidateSerializer,
     PromoCodeValidSerializer,
 )
@@ -42,7 +41,7 @@ class PromoCodeValidateView(APIView):
 
     @extend_schema(
         request=PromoCodeValidateSerializer,
-        responses={200: PromoCodeValidSerializer, 400: PromoCodeInvalidSerializer, 404: DetailSerializer},
+        responses={200: PromoCodeValidSerializer},
         summary="Check a promo code",
     )
     def post(self, request: Request) -> Response:
@@ -82,12 +81,7 @@ class CheckoutView(APIView):
 
     @extend_schema(
         request=CheckoutSerializer,
-        responses={
-            201: CheckoutResponseSerializer,
-            400: DetailSerializer,
-            404: DetailSerializer,
-            503: DetailSerializer,
-        },
+        responses={201: CheckoutResponseSerializer},
         summary="Start checkout",
     )
     def post(self, request: Request) -> Response:
@@ -130,7 +124,7 @@ class OrderStatusView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        responses={200: OrderStatusSerializer, 404: DetailSerializer},
+        responses={200: OrderStatusSerializer},
         summary="Check an order",
     )
     def get(self, request: Request, order_id: str) -> Response:
@@ -152,7 +146,7 @@ class StripeWebhookView(APIView):
     authentication_classes: list = []
     throttle_classes: list = []
 
-    @extend_schema(request=None, responses={200: DetailSerializer, 400: DetailSerializer}, summary="Stripe webhook")
+    @extend_schema(request=None, responses={200: DetailSerializer}, summary="Stripe webhook")
     def post(self, request: Request) -> Response:
         try:
             event = stripe_client.read_webhook_event(

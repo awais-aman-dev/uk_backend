@@ -121,7 +121,8 @@ REST_FRAMEWORK = {
     # Endpoints require a logged-in user unless they set permission_classes = [AllowAny].
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Swagger shows a padlock only where a token is really needed; see apps/core/schema.py.
+    "DEFAULT_SCHEMA_CLASS": "apps.core.schema.SecurityAwareAutoSchema",
     # Views pick a scope by name, e.g. throttle_scope / a throttle class with scope = "auth_anon".
     "DEFAULT_THROTTLE_RATES": {
         "auth_anon": "10/minute",

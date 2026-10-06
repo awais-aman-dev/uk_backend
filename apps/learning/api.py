@@ -13,7 +13,7 @@ lapsed plan answers 402, matching the contract the frontend already implements.
 
 from typing import cast
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -24,9 +24,22 @@ from apps.accounts.models import User
 from apps.entitlements import services as entitlements
 from apps.learning import services
 from apps.learning.models import Chapter, Question, Sign, Subchapter
+from apps.learning.serializers import (
+    AnswerRequestSerializer,
+    AnswerResponseSerializer,
+    EbookChapterResponseSerializer,
+    EbookListResponseSerializer,
+    LessonDetailResponseSerializer,
+    PracticeSetResponseSerializer,
+    SignListResponseSerializer,
+    TopicListResponseSerializer,
+)
 
 PLAN_NEEDED = "An active plan is needed for this"
 HIGHWAY_CODE_SLUG = "highway-code"
+# The modes the practice endpoint accepts. The ones that depend on past attempts are accepted
+# but practise everything, because progress is not recorded yet.
+MODES = ["random", "topic", "mistakes", "weak", "saved", "review"]
 
 
 def plan_needed() -> Response:
@@ -57,7 +70,11 @@ class TopicListView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(operation_id="listTopics", summary="List the topics and their lessons", responses={200: dict})
+    @extend_schema(
+        operation_id="listTopics",
+        summary="List the topics and their lessons",
+        responses={200: TopicListResponseSerializer},
+    )
     def get(self, request: Request) -> Response:
         student = cast(User, request.user)
         chapters = services.live(Chapter.objects.all()).order_by("order", "title")
@@ -101,7 +118,11 @@ class LessonDetailView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(operation_id="getLesson", summary="Read a lesson", responses={200: dict, 402: dict, 404: dict})
+    @extend_schema(
+        operation_id="getLesson",
+        summary="Read a lesson",
+        responses={200: LessonDetailResponseSerializer},
+    )
     def get(self, request: Request, slug: str) -> Response:
         student = cast(User, request.user)
         subchapter = services.live(Subchapter.objects.select_related("chapter")).filter(slug=slug).first()
@@ -169,7 +190,11 @@ class EbookView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(operation_id="listChapters", summary="List the e-book chapters", responses={200: dict, 404: dict})
+    @extend_schema(
+        operation_id="listChapters",
+        summary="List the e-book chapters",
+        responses={200: EbookListResponseSerializer},
+    )
     def get(self, request: Request) -> Response:
         student = cast(User, request.user)
         book = services.live(Chapter.objects.all()).filter(slug=HIGHWAY_CODE_SLUG).first()
@@ -204,7 +229,9 @@ class EbookChapterView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        operation_id="getChapter", summary="Read an e-book chapter", responses={200: dict, 402: dict, 404: dict}
+        operation_id="getChapter",
+        summary="Read an e-book chapter",
+        responses={200: EbookChapterResponseSerializer},
     )
     def get(self, request: Request, slug: str) -> Response:
         student = cast(User, request.user)
@@ -250,7 +277,11 @@ class SignListView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(operation_id="listSigns", summary="List the road signs", responses={200: dict, 402: dict})
+    @extend_schema(
+        operation_id="listSigns",
+        summary="List the road signs",
+        responses={200: SignListResponseSerializer},
+    )
     def get(self, request: Request) -> Response:
         student = cast(User, request.user)
         if not entitlements.has_access(student):
@@ -268,7 +299,14 @@ class PracticeSetView(APIView):
     @extend_schema(
         operation_id="getPracticeSet",
         summary="Get a set of practice questions",
-        responses={200: dict, 402: dict, 404: dict},
+        parameters=[
+            OpenApiParameter("mode", str, OpenApiParameter.QUERY, enum=MODES, default="random"),
+            OpenApiParameter(
+                "topic", str, OpenApiParameter.QUERY, description="A chapter slug. Required when mode=topic."
+            ),
+            OpenApiParameter("count", int, OpenApiParameter.QUERY, default=10, description="Clamped to 1-50."),
+        ],
+        responses={200: PracticeSetResponseSerializer},
     )
     def get(self, request: Request) -> Response:
         student = cast(User, request.user)
@@ -327,8 +365,8 @@ class AnswerView(APIView):
     @extend_schema(
         operation_id="checkAnswer",
         summary="Check an answer",
-        request=dict,
-        responses={200: dict, 402: dict, 404: dict},
+        request=AnswerRequestSerializer,
+        responses={200: AnswerResponseSerializer},
     )
     def post(self, request: Request) -> Response:
         student = cast(User, request.user)
