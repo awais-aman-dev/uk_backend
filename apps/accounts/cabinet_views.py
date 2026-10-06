@@ -55,7 +55,7 @@ class EmailChangeRequestView(APIView):
 
     @extend_schema(
         request=EmailChangeSerializer,
-        responses={200: DetailSerializer, 400: DetailSerializer, 409: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Ask to change your email address",
     )
     def post(self, request: Request) -> Response:
@@ -94,7 +94,7 @@ class EmailChangeConfirmView(APIView):
 
     @extend_schema(
         parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY, required=True)],
-        responses={200: DetailSerializer, 400: DetailSerializer, 409: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Confirm a new email address",
     )
     def get(self, request: Request) -> Response:
@@ -121,7 +121,7 @@ class PasswordChangeView(APIView):
 
     @extend_schema(
         request=PasswordChangeSerializer,
-        responses={200: DetailSerializer, 400: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Change your password",
     )
     def post(self, request: Request) -> Response:
@@ -190,7 +190,7 @@ class LearningUrlView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        responses={200: LearningUrlSerializer, 403: DetailSerializer},
+        responses={200: LearningUrlSerializer},
         summary="Enter the learning platform",
     )
     def get(self, request: Request) -> Response:

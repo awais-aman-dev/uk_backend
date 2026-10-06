@@ -51,7 +51,7 @@ class RegisterView(APIView):
 
     @extend_schema(
         request=RegisterSerializer,
-        responses={201: RegisterResponseSerializer, 409: DetailSerializer},
+        responses={201: RegisterResponseSerializer},
         summary="Create an account",
     )
     def post(self, request: Request) -> Response:
@@ -86,7 +86,7 @@ class LoginView(APIView):
 
     @extend_schema(
         request=LoginSerializer,
-        responses={200: TokenPairSerializer, 400: DetailSerializer, 401: DetailSerializer},
+        responses={200: TokenPairSerializer},
         summary="Sign in with email and password",
     )
     def post(self, request: Request) -> Response:
@@ -134,12 +134,7 @@ class GoogleSignInView(APIView):
 
     @extend_schema(
         request=GoogleSignInSerializer,
-        responses={
-            200: GoogleSignInResponseSerializer,
-            201: GoogleSignInResponseSerializer,
-            401: DetailSerializer,
-            409: DetailSerializer,
-        },
+        responses={200: GoogleSignInResponseSerializer, 201: GoogleSignInResponseSerializer},
         summary="Sign in with Google",
     )
     def post(self, request: Request) -> Response:
@@ -187,7 +182,7 @@ class GoogleLinkView(APIView):
 
     @extend_schema(
         request=GoogleLinkSerializer,
-        responses={200: DetailSerializer, 400: DetailSerializer, 401: DetailSerializer, 409: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Link a Google account",
     )
     def post(self, request: Request) -> Response:
@@ -220,7 +215,7 @@ class TokenRefreshView(APIView):
 
     @extend_schema(
         request=refresh_request,
-        responses={200: TokenPairSerializer, 400: DetailSerializer, 401: DetailSerializer},
+        responses={200: TokenPairSerializer},
         summary="Exchange a refresh token for a new token pair",
     )
     def post(self, request: Request) -> Response:
@@ -252,7 +247,7 @@ class EmailVerifyView(APIView):
 
     @extend_schema(
         parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY, required=True)],
-        responses={200: DetailSerializer, 400: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Confirm an email address from the emailed link",
     )
     def get(self, request: Request) -> Response:
@@ -274,7 +269,7 @@ class EmailVerifyResendView(APIView):
 
     @extend_schema(
         request=None,
-        responses={200: DetailSerializer, 500: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Send the verification email again",
     )
     def post(self, request: Request) -> Response:
@@ -331,7 +326,7 @@ class PasswordResetConfirmView(APIView):
 
     @extend_schema(
         request=PasswordResetConfirmSerializer,
-        responses={200: DetailSerializer, 400: DetailSerializer},
+        responses={200: DetailSerializer},
         summary="Set a new password using a reset link",
     )
     def post(self, request: Request) -> Response:
