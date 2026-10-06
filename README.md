@@ -52,6 +52,8 @@ container start, so scaling out can't run them concurrently.
 | Health | `GET /api/healthcheck/` |
 | Authentication | `POST /api/auth/register/`, `login/`, `logout/`, `token/refresh/`, `password/reset/`, `password/reset/confirm/`; `GET /api/auth/email/verify/`, `POST /api/auth/email/verify/resend/` |
 | Google sign-in | `POST /api/auth/google/`, `POST /api/auth/google/link/` |
+| Catalogue | `GET /api/packages/`, `GET /api/packages/<slug>/` |
+| Payments | `POST /api/payments/checkout/`, `POST /api/payments/promo-codes/validate/`, `GET /api/payments/orders/<uuid>/`, `POST /api/payments/webhook/stripe/` |
 | Documentation | `/api/swagger/`, `/api/redoc/`, `/api/schema/` |
 | Admin | `/api/admin/` |
 
@@ -64,6 +66,15 @@ and password-reset links can be copied straight from `docker compose logs web`.
 
 Google sign-in needs `GOOGLE_CLIENT_IDS` set to the OAuth client ids the frontends use. While it
 is empty, those two endpoints refuse every token.
+
+Payments need `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Customers buy as guests: checkout
+creates a pending order and sends them to Stripe's hosted page, and the order only becomes paid
+when Stripe's signed webhook says so. To receive webhooks locally, forward them with the Stripe
+CLI:
+
+```bash
+stripe listen --forward-to localhost:8000/api/payments/webhook/stripe/
+```
 
 ### Running without Docker
 

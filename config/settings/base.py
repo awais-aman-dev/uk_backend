@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     # Local
     "apps.core",
     "apps.accounts",
+    "apps.catalog",
+    "apps.billing",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -111,6 +113,8 @@ REST_FRAMEWORK = {
         "auth_user": "30/minute",
         "password_reset": "5/hour",
         "email_resend": "5/hour",
+        "checkout": "30/hour",
+        "promo_code": "60/hour",
     },
 }
 
@@ -143,6 +147,12 @@ CACHES = {
 # --- Email ---------------------------------------------------------------------------------------
 
 DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="1Theory <info@1theory.co.uk>")
+
+# --- Payments ------------------------------------------------------------------------------------
+# The webhook secret is what proves a webhook came from Stripe; without it no payment is accepted.
+
+STRIPE_SECRET_KEY = env.str("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = env.str("STRIPE_WEBHOOK_SECRET", default="")
 
 # --- Google sign-in ------------------------------------------------------------------------------
 # Every OAuth client id the frontends use (web, and a mobile app later). A Google ID token is only
