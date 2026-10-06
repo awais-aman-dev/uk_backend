@@ -1,0 +1,38 @@
+# Local development stack: `docker compose up`.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: uk_backend
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Reports when Postgres is ready for connections, so web does not start too early.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 15
+
+  web:
+    build: .
+    # Development server, instead of the gunicorn command in the Dockerfile.
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      # Inside compose the database is reachable by the service name "db".
+      DATABASE_URL: postgres://postgres:postgres@db:5432/uk_backend
+    ports:
+      - "8000:8000"
+    # Mount the source code so edits apply without rebuilding the image.
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
