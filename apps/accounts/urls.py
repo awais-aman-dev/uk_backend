@@ -5,6 +5,8 @@ from apps.accounts import views
 urlpatterns = [
     path("auth/register/", views.RegisterView.as_view(), name="auth-register"),
     path("auth/login/", views.LoginView.as_view(), name="auth-login"),
+    path("auth/google/", views.GoogleSignInView.as_view(), name="auth-google"),
+    path("auth/google/link/", views.GoogleLinkView.as_view(), name="auth-google-link"),
     path("auth/logout/", views.LogoutView.as_view(), name="auth-logout"),
     path("auth/token/refresh/", views.TokenRefreshView.as_view(), name="auth-token-refresh"),
     path("auth/email/verify/", views.EmailVerifyView.as_view(), name="auth-email-verify"),

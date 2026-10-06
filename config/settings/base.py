@@ -144,6 +144,12 @@ CACHES = {
 
 DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="1Theory <info@1theory.co.uk>")
 
+# --- Google sign-in ------------------------------------------------------------------------------
+# Every OAuth client id the frontends use (web, and a mobile app later). A Google ID token is only
+# accepted if it was issued for one of these, so tokens for other apps cannot be replayed here.
+
+GOOGLE_CLIENT_IDS: list[str] = env.list("GOOGLE_CLIENT_IDS", default=[])
+
 # --- Internationalisation ------------------------------------------------------------------------
 
 LANGUAGE_CODE = "en-gb"
