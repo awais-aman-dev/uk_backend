@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from constance import config
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -44,6 +44,82 @@ def has_access(user: User, at=None) -> bool:
         starts_at__lte=at,
         package_expires_at__gt=at,
     ).exists()
+
+
+def package_of(user: User) -> int | None:
+    """Which package this person is currently on, or None if they have bought nothing."""
+    subscription = current_subscription(user)
+    return subscription.package_id if subscription else None
+
+
+def _allows(package_id: int | None, prefix: str = "") -> Q:
+    """Material is allowed when it lists no packages, or lists the one the student is on.
+
+    ``prefix`` walks up the hierarchy, so the same rule covers an item, its subchapter and its
+    chapter: a restriction higher up covers everything beneath it.
+    """
+    unrestricted = Q(**{f"{prefix}only_for_packages__isnull": True})
+    if package_id is None:
+        return unrestricted
+    return unrestricted | Q(**{f"{prefix}only_for_packages": package_id})
+
+
+def can_view(user: User, content, at=None) -> bool:
+    """Whether this person may see a particular piece of learning material.
+
+    Two questions, in order: do they have learning access at all, and is this material — or the
+    subchapter or chapter holding it — limited to packages they did not buy.
+    """
+    if not has_access(user, at):
+        return False
+
+    package_id = package_of(user)
+    owners = [content]
+    subchapter = getattr(content, "subchapter", None)
+    if subchapter is not None:
+        owners += [subchapter, subchapter.chapter]
+    chapter = getattr(content, "chapter", None)
+    if chapter is not None:
+        owners.append(chapter)
+
+    for owner in owners:
+        required = {package.pk for package in owner.only_for_packages.all()}
+        if required and package_id not in required:
+            return False
+
+    return True
+
+
+def visible_content(user: User, queryset, at=None):
+    """Narrow a queryset of learning content to what this person may see.
+
+    Used for lists, where asking per item would mean a query per row. Checks the item, its
+    subchapter and its chapter, because a package that excludes a chapter excludes its contents.
+    """
+    if not has_access(user, at):
+        return queryset.none()
+
+    package_id = package_of(user)
+    return queryset.filter(
+        _allows(package_id),
+        _allows(package_id, "subchapter__"),
+        _allows(package_id, "subchapter__chapter__"),
+    ).distinct()
+
+
+def visible_subchapters(user: User, queryset, at=None):
+    if not has_access(user, at):
+        return queryset.none()
+
+    package_id = package_of(user)
+    return queryset.filter(_allows(package_id), _allows(package_id, "chapter__")).distinct()
+
+
+def visible_chapters(user: User, queryset, at=None):
+    if not has_access(user, at):
+        return queryset.none()
+
+    return queryset.filter(_allows(package_of(user))).distinct()
 
 
 def account_lifetime_days(duration_days: int) -> float:

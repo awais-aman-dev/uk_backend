@@ -11,6 +11,57 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
+class PublishStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    PUBLISHED = "published", "Published"
+    ARCHIVED = "archived", "Archived"
+
+
+class PublishableModel(models.Model):
+    """Abstract base for anything students only see once staff say so.
+
+    Saving is not publishing: content stays a draft until somebody with the publish permission
+    says otherwise, so a half-written lesson cannot reach students because an editor pressed save.
+    Publishing goes through a service that checks the permission, validates the content and
+    records who did it.
+    """
+
+    status = models.CharField(max_length=10, choices=PublishStatus.choices, default=PublishStatus.DRAFT)
+    publish_from = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Leave empty to go live as soon as it is published. Otherwise students see it from this time.",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, editable=False)
+    published_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="+",
+    )
+
+    class Meta:
+        abstract = True
+
+    @property
+    def is_published(self) -> bool:
+        """Whether staff have released it. Not the same as students being able to see it."""
+        return self.status == PublishStatus.PUBLISHED
+
+    def is_live(self, at=None) -> bool:
+        """Whether students can see it now: published, and past its scheduled time."""
+        if not self.is_published:
+            return False
+        if self.publish_from is None:
+            return True
+
+        from django.utils import timezone
+
+        return self.publish_from <= (at or timezone.now())
+
+
 class AuditEvent(models.Model):
     """A record of one change a staff member made to somebody else's data.
 
