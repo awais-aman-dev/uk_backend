@@ -49,7 +49,7 @@ const style = computed(() => ({
 .seg__track {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(var(--n), 1fr);
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
   padding: 4px;
   border-radius: 16px;
   background: rgb(118 118 128 / 0.12);

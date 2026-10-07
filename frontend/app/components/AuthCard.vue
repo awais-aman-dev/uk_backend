@@ -32,9 +32,9 @@ withDefaults(defineProps<{ title: string; lead?: string; back?: string }>(), { l
     radial-gradient(closest-side at 65% 50%, rgb(162 89 255 / 0.18), transparent);
   pointer-events: none;
 }
-.auth-card__grid { position: relative; display: grid; justify-items: center; gap: 16px; }
+.auth-card__grid { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 16px; }
 .auth-card__back { width: 100%; max-width: 440px; }
-.card { width: 100%; max-width: 440px; display: grid; gap: 18px; padding: 32px 24px; border-radius: var(--radius-xl); }
+.card { width: 100%; max-width: 440px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 32px 24px; border-radius: var(--radius-xl); }
 @media (min-width: 600px) { .card { padding: 40px; } }
 h1 { font-size: 2rem; }
 .lead { margin-top: -10px; color: var(--muted); }

@@ -141,7 +141,7 @@ const checkout = useCheckout()
 
 <style scoped>
 .auth { padding: 12px 0 72px; }
-.auth__grid { display: grid; gap: 24px; max-width: 1040px; }
+.auth__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; max-width: 1040px; }
 @media (min-width: 900px) {
   .auth { padding-top: 12px; }
   .auth__grid { grid-template-columns: 1.25fr 1fr; gap: 40px; align-items: start; }
@@ -152,6 +152,7 @@ const checkout = useCheckout()
 
 .card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 22px;
   border-radius: var(--radius-lg);

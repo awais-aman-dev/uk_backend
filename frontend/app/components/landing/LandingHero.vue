@@ -147,9 +147,6 @@ const title = ['The', 'easy', 'way', 'to', 'pass', 'your', 'theory', 'test.']
   transform-origin: left;
   transform: scaleX(var(--mark, 1));
 }
-/* JS on: the words wait for GSAP; a CSS fallback shows them anyway if it never arrives */
-:global(html.js) .hero__title .w { opacity: 0; animation: w-fallback 0.01s 2.5s forwards; }
-@keyframes w-fallback { to { opacity: 1; } }
 
 .hero__lead {
   max-width: 540px;
@@ -192,6 +189,5 @@ const title = ['The', 'easy', 'way', 'to', 'pass', 'your', 'theory', 'test.']
 }
 @media (prefers-reduced-motion: reduce) {
   .hero__sky i, .float-sign__plate { animation: none; }
-  :global(html.js) .hero__title .w { opacity: 1; animation: none; }
 }
 </style>

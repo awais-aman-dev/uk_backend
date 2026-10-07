@@ -306,7 +306,7 @@ html.js [data-reveal][data-shown] { opacity: 1; transform: none; }
 }
 
 /* ---------- Form fields (shared by Ui* components) ---------- */
-.field { display: grid; gap: 6px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .field__label { font-weight: 500; font-size: 0.9375rem; color: var(--ink); }
 .field__hint { font-size: 0.8125rem; color: var(--muted); }
 .field__control {
@@ -361,7 +361,8 @@ select.field__input { appearance: none; padding-right: 44px; cursor: pointer; }
 }
 .field__error a { color: inherit; font-weight: 600; text-decoration: underline; }
 
-.form { display: grid; gap: 18px; }
+/* single grid column that may shrink below its content's natural width — forms must fit 320px screens (WCAG 1.4.10) */
+.form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .form-link { color: var(--accent); font-weight: 500; }
 
 /* ==========================================================================
@@ -478,3 +479,11 @@ select.field__input { appearance: none; padding-right: 44px; cursor: pointer; }
 .landing .section--dark { background: linear-gradient(180deg, var(--road-night), var(--road-night-2)); }
 .landing .section--dark .eyebrow,
 .landing .section--dark .mark { color: #9cc0ea; }
+
+/* Hero title words wait for the GSAP intro; a CSS fallback shows them anyway if it never arrives.
+   Kept here, not in the component: a scoped `:global(html.js) …` compiles to plain `html.js` and hid the whole page. */
+html.js .hero__title .w { opacity: 0; animation: hero-word-fallback 0.01s 2.5s forwards; }
+@keyframes hero-word-fallback { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  html.js .hero__title .w { opacity: 1; animation: none; }
+}
