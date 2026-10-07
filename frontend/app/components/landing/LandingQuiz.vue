@@ -61,6 +61,13 @@ const restart = () => {
   results.value = []
 }
 
+// The card's traffic light: amber while you think, green or red once you answer, green at the end
+const light = computed(() => {
+  if (done.value) return 'green'
+  if (picked.value === null) return 'amber'
+  return picked.value === current.value.answer ? 'green' : 'red'
+})
+
 const verdict = computed(() => {
   if (score.value === 5) return 'Perfect score. You might be closer to passing than you think.'
   if (score.value >= 3) return 'Not bad! A few weeks with 1Theory and you’ll be test-ready.'
@@ -78,6 +85,7 @@ const verdict = computed(() => {
       </div>
 
       <div v-reveal="120" class="quiz__card" aria-live="polite">
+        <LandingTrafficLight class="quiz__light" :state="light" :pole="false" />
         <div class="quiz__progress" aria-hidden="true">
           <span
             v-for="(_, i) in questions"
@@ -161,8 +169,10 @@ const verdict = computed(() => {
   background: var(--card);
   box-shadow: var(--shadow-lg);
 }
-.quiz__progress { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 24px; }
-.quiz__progress span { height: 4px; border-radius: 2px; background: #e5e5ea; transition: background-color 0.4s; }
+/* the light sits on the card's top edge, like a signal by the road */
+.quiz__light { position: absolute; top: -26px; right: 22px; width: 30px; transform: rotate(-90deg); }
+.quiz__progress { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 0 64px 24px 0; }
+.quiz__progress span { height: 5px; border-radius: 3px; background: #e6e2d8; transition: background-color 0.4s; }
 .quiz__progress .is-current { background: var(--ink); }
 .quiz__progress .is-right { background: var(--go); }
 .quiz__progress .is-wrong { background: var(--stop); }

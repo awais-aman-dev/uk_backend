@@ -22,8 +22,8 @@ const island = ref<HTMLElement>()
 useLiquidGlass(island, { bezel: 20, strength: 40, blur: 4 })
 
 // Like Apple's bars, the glass adapts to what's under it: light glass with dark text over light sections,
-// dark glass over the dark ones (hero, pricing, final CTA). Sampled on scroll, once per frame.
-const DARK = '.hero, .section--dark, .final, [data-surface="dark"]'
+// dark glass over the dark ones (pricing, final CTA). Sampled on scroll, once per frame.
+const DARK = '.section--dark, .final, [data-surface="dark"]'
 const onLight = ref(false)
 onMounted(() => {
   let frame = 0

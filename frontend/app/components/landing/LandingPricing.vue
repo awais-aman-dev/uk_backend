@@ -40,7 +40,11 @@ const trust = [
           class="plan glass-dark"
           :class="{ 'plan--rec': plan.featured, 'plan--value': badge(plan).startsWith('Best value') }"
         >
-          <span v-if="badge(plan)" class="plan__badge">{{ badge(plan) }}</span>
+          <div class="plan__top">
+            <span v-if="badge(plan)" class="plan__badge">{{ badge(plan) }}</span>
+            <!-- the length of access, on a speed-limit roundel -->
+            <span class="plan__sign" aria-hidden="true"><b>{{ plan.days }}</b><small>days</small></span>
+          </div>
           <h3 class="plan__name">{{ plan.name }}</h3>
           <p class="plan__tagline">{{ plan.description }}</p>
 
@@ -69,6 +73,7 @@ const trust = [
         <li v-for="t in trust" :key="t.text"><AppIcon :name="t.icon" :size="20" />{{ t.text }}</li>
       </ul>
     </div>
+    <div class="pricing__lane" aria-hidden="true"><i /></div>
   </section>
 </template>
 
@@ -82,8 +87,8 @@ const trust = [
   border-radius: 50%;
   opacity: 0.5;
 }
-.pricing__glow span:first-child { left: 50%; top: 20%; margin-left: -35vmax; background: radial-gradient(closest-side, rgb(41 151 255 / 0.45), transparent); }
-.pricing__glow span:last-child { right: -30vmax; bottom: -40vmax; background: radial-gradient(closest-side, rgb(162 89 255 / 0.4), transparent); }
+.pricing__glow span:first-child { left: 50%; top: 20%; margin-left: -35vmax; background: radial-gradient(closest-side, rgb(91 134 189 / 0.45), transparent); }
+.pricing__glow span:last-child { right: -30vmax; bottom: -40vmax; background: radial-gradient(closest-side, rgb(239 192 102 / 0.22), transparent); }
 .pricing__inner { position: relative; }
 
 .plans { display: grid; gap: 16px; max-width: 1040px; margin-inline: auto; }
@@ -98,12 +103,12 @@ const trust = [
 .plan:hover { transform: translateY(-6px); }
 .plan--rec {
   order: -1; /* recommended plan first on mobile */
-  border-color: rgb(41 151 255 / 0.6);
+  border-color: rgb(143 179 224 / 0.6);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.2),
-    0 0 0 1px rgb(41 151 255 / 0.4),
-    0 30px 80px -20px rgb(41 151 255 / 0.45);
-  background: linear-gradient(180deg, rgb(41 151 255 / 0.18), rgb(28 28 30 / 0.7) 45%);
+    0 0 0 1px rgb(143 179 224 / 0.45),
+    0 30px 80px -24px rgb(91 134 189 / 0.6);
+  background: linear-gradient(180deg, rgb(91 134 189 / 0.3), rgb(31 42 61 / 0.75) 50%);
 }
 
 .plan__badge {
@@ -116,17 +121,50 @@ const trust = [
   color: var(--muted-dark);
 }
 .plan--rec .plan__badge { background: var(--accent); color: #fff; }
-.plan--value .plan__badge { background: rgb(48 209 88 / 0.16); color: #30d158; }
+.plan--value .plan__badge { background: rgb(108 196 144 / 0.18); color: #8fd9ad; }
 .plans__empty { grid-column: 1 / -1; text-align: center; color: var(--muted-dark); }
 
-.plan__name { margin-top: 20px; font-size: 1.75rem; }
+.plan__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; }
+.plan__sign {
+  flex: none;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  width: 64px;
+  height: 64px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 7px #d9776f, 0 10px 24px -8px rgb(0 0 0 / 0.5);
+  color: #26303b;
+  line-height: 1;
+  transition: transform 0.6s var(--spring);
+}
+.plan__sign b { font-family: var(--font-display); font-size: 1.375rem; font-weight: 700; letter-spacing: -0.03em; }
+.plan__sign small { font-size: 0.5625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #5d6874; }
+.plan:hover .plan__sign { transform: rotate(-8deg) scale(1.06); }
+.plan__name { margin-top: 14px; font-size: 1.75rem; }
+
+/* night lane at the foot of the section, drawn on scroll */
+.pricing__lane { position: relative; height: 44px; margin-top: 72px; background: #3a4558; }
+.pricing__lane i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 19px;
+  height: 5px;
+  background: repeating-linear-gradient(90deg, #efe6cf 0 60px, transparent 60px 108px);
+  opacity: 0.8;
+  transform-origin: left;
+}
+.pricing { padding-bottom: 0; }
 .plan__tagline { margin-top: 6px; color: var(--muted-dark); font-size: 0.9375rem; min-height: 3em; }
 
 .plan__price { display: flex; align-items: baseline; gap: 10px; margin-top: 18px; }
 .plan__price strong { font-family: var(--font-display); font-size: 3.75rem; font-weight: 600; line-height: 1; letter-spacing: -0.04em; color: #fff; }
 .plan__price span { color: var(--muted-dark); }
 .plan__perday { margin: 8px 0 24px; font-size: 0.9375rem; color: var(--muted-dark); }
-.plan--rec .plan__perday { color: var(--accent-bright); }
+.plan--rec .plan__perday { color: #9cc0ea; }
 
 .plan__features {
   list-style: none;
@@ -139,7 +177,7 @@ const trust = [
   color: rgb(255 255 255 / 0.85);
 }
 .plan__features li { display: flex; gap: 10px; align-items: flex-start; }
-.plan__features :deep(.icon) { flex: none; margin-top: 1px; color: var(--accent-bright); }
+.plan__features :deep(.icon) { flex: none; margin-top: 1px; color: #8fd9ad; }
 
 .trust {
   list-style: none;

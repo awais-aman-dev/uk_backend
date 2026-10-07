@@ -10,11 +10,22 @@ const features = [
 const track = ref<HTMLElement>()
 const atStart = ref(true)
 const atEnd = ref(false)
+const lane = ref<HTMLElement>()
 const onScroll = () => {
   const el = track.value
   if (!el) return
   atStart.value = el.scrollLeft < 8
   atEnd.value = el.scrollLeft + el.clientWidth > el.scrollWidth - 8
+  // the car below drives along with the strip; its wheels (r 12 of the 170-unit-wide car) turn by the distance covered
+  const max = el.scrollWidth - el.clientWidth
+  const progress = max > 0 ? el.scrollLeft / max : 0
+  const road = lane.value
+  const car = road?.querySelector<HTMLElement>('.lane__car')
+  if (road && car) {
+    const travel = progress * (road.clientWidth - car.offsetLeft * 2 - car.offsetWidth)
+    road.style.setProperty('--car-x', `${travel}px`)
+    road.style.setProperty('--spin', `${(travel / (2 * Math.PI * 12 * (90 / 170))) * 360}deg`)
+  }
 }
 const scroll = (dir: 1 | -1) => {
   const el = track.value
@@ -55,10 +66,10 @@ const scroll = (dir: 1 | -1) => {
           </template>
 
           <template v-else-if="f.kind === 'hazard'">
-            <div class="road">
-              <span class="road__lines" />
-              <span class="road__ring" />
-              <span class="road__score glass-dark"><b>5</b> pts</span>
+            <div class="hz">
+              <span class="hz__lines" />
+              <span class="hz__ring" />
+              <span class="hz__score glass-dark"><b>5</b> pts</span>
             </div>
           </template>
 
@@ -72,9 +83,9 @@ const scroll = (dir: 1 | -1) => {
 
           <template v-else-if="f.kind === 'book'">
             <div class="signs">
-              <svg viewBox="0 0 64 56"><path d="M32 4 60 52H4z" fill="#fff" stroke="#e5312b" stroke-width="5" stroke-linejoin="round" /><path d="M32 20v14M32 41v1" stroke="#1d1d1f" stroke-width="4" stroke-linecap="round" /></svg>
-              <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="#fff" stroke="#e5312b" stroke-width="7" /><text x="32" y="41" text-anchor="middle" font-size="24" font-weight="700" font-family="-apple-system, Inter, sans-serif" fill="#1d1d1f">30</text></svg>
-              <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="29" fill="#0a5bd3" /><path d="M32 46V20m-10 10 10-10 10 10" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <svg viewBox="0 0 64 56"><path d="M32 4 60 52H4z" fill="#fff" stroke="#d9776f" stroke-width="5" stroke-linejoin="round" /><path d="M32 20v14M32 41v1" stroke="#1d1d1f" stroke-width="4" stroke-linecap="round" /></svg>
+              <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="#fff" stroke="#d9776f" stroke-width="7" /><text x="32" y="41" text-anchor="middle" font-size="24" font-weight="700" font-family="-apple-system, Inter, sans-serif" fill="#1d1d1f">30</text></svg>
+              <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="29" fill="#5b86bd" /><path d="M32 46V20m-10 10 10-10 10 10" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </div>
           </template>
 
@@ -91,6 +102,11 @@ const scroll = (dir: 1 | -1) => {
 
         <span class="card__plus glass" aria-hidden="true"><AppIcon name="plus" :size="18" /></span>
       </article>
+    </div>
+
+    <div ref="lane" class="lane" aria-hidden="true">
+      <span class="lane__dashes" />
+      <div class="lane__car"><LandingCar color="#e3a96b" css-spin /></div>
     </div>
 
     <div class="container gallery__nav">
@@ -135,10 +151,10 @@ const scroll = (dir: 1 | -1) => {
   transition: transform 0.6s var(--ease), box-shadow 0.6s var(--ease);
 }
 .card:hover { transform: scale(1.015); box-shadow: var(--shadow-lg); }
-.card--dark { background: var(--black); color: #f5f5f7; }
-.card--light { background: var(--card); color: var(--ink); }
+.card--dark { background: linear-gradient(165deg, #2f4160, #1f2a3d); color: #f3f1ec; }
+.card--light { background: #fff; color: var(--ink); box-shadow: 0 24px 50px -32px rgb(38 64 99 / 0.35); }
 .card__eyebrow { font-size: 0.875rem; font-weight: 600; color: var(--muted); }
-.card--dark .card__eyebrow { color: var(--muted-dark); }
+.card--dark .card__eyebrow { color: #a9bad3; }
 .card h3 { margin-top: 8px; font-size: clamp(1.5rem, 3.4vw, 1.75rem); line-height: 1.14; }
 
 .art { flex: 1; display: grid; place-items: center; margin-top: 16px; }
@@ -167,15 +183,15 @@ const scroll = (dir: 1 | -1) => {
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: #111;
+  background: #1a2433;
 }
 .player__blur {
   position: absolute;
   inset: -20%;
   background:
-    radial-gradient(40% 50% at 30% 40%, #2997ff, transparent 70%),
-    radial-gradient(40% 50% at 70% 60%, #a259ff, transparent 70%),
-    radial-gradient(30% 40% at 55% 30%, #ff6482, transparent 70%);
+    radial-gradient(40% 50% at 30% 40%, #5b86bd, transparent 70%),
+    radial-gradient(40% 50% at 70% 60%, #6cc490, transparent 70%),
+    radial-gradient(30% 40% at 55% 30%, #efc066, transparent 70%);
   filter: blur(20px);
   animation: drift 9s ease-in-out infinite alternate;
 }
@@ -198,15 +214,15 @@ const scroll = (dir: 1 | -1) => {
 .player__bar i { display: block; width: 38%; height: 100%; background: #fff; border-radius: 2px; }
 
 /* hazard */
-.road { position: relative; width: 100%; height: 100%; min-height: 200px; }
-.road__lines {
+.hz { position: relative; width: 100%; height: 100%; min-height: 200px; }
+.hz__lines {
   position: absolute;
   inset: 20% 0 0;
   background:
     linear-gradient(to top right, transparent calc(50% - 1px), rgb(255 255 255 / 0.35) 50%, transparent calc(50% + 1px)) left / 50% 100% no-repeat,
     linear-gradient(to top left, transparent calc(50% - 1px), rgb(255 255 255 / 0.35) 50%, transparent calc(50% + 1px)) right / 50% 100% no-repeat;
 }
-.road__lines::after {
+.hz__lines::after {
   content: '';
   position: absolute;
   left: 50%;
@@ -220,29 +236,29 @@ const scroll = (dir: 1 | -1) => {
   animation: lane 0.9s linear infinite;
 }
 @keyframes lane { to { background-position: 0 30px; } }
-.road__ring {
+.hz__ring {
   position: absolute;
   left: 26%;
   top: 46%;
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  border: 2px solid var(--warn);
+  border: 2px solid #efc066;
   animation: ring 2s var(--ease) infinite;
 }
 @keyframes ring {
   0% { transform: scale(0.6); opacity: 1; }
   100% { transform: scale(1.5); opacity: 0; }
 }
-.road__score { position: absolute; right: 8%; top: 22%; padding: 8px 14px; border-radius: 14px; font-size: 0.875rem; }
-.road__score b { font-family: var(--font-display); font-size: 1.375rem; color: var(--warn); }
+.hz__score { position: absolute; right: 8%; top: 22%; padding: 8px 14px; border-radius: 14px; font-size: 0.875rem; }
+.hz__score b { font-family: var(--font-display); font-size: 1.375rem; color: #efc066; }
 
 /* practice */
 .ios-list { width: 100%; display: grid; gap: 1px; border-radius: 16px; overflow: hidden; background: var(--line-soft); box-shadow: var(--shadow); }
 .ios-list span { display: flex; align-items: center; gap: 12px; padding: 16px; background: #fff; font-weight: 500; }
 .ios-list i { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px #c7c7cc; transition: box-shadow 0.4s var(--spring); }
-.ios-list .is-on { background: var(--accent-soft); }
-.ios-list .is-on i { box-shadow: inset 0 0 0 7px var(--accent); }
+.ios-list .is-on { background: #e4edf7; }
+.ios-list .is-on i { box-shadow: inset 0 0 0 7px #5b86bd; }
 
 /* book */
 .signs { display: flex; gap: 14px; align-items: center; }
@@ -256,14 +272,37 @@ const scroll = (dir: 1 | -1) => {
 .stats__rings { width: 130px; transform: rotate(-90deg); }
 .stats__rings circle { fill: none; stroke: rgb(255 255 255 / 0.12); stroke-width: 12; stroke-linecap: round; }
 .stats__rings .v { stroke-dasharray: 100; stroke-dashoffset: 100; }
-.stats__rings .v1 { stroke: #30d158; }
-.stats__rings .v2 { stroke: #0a84ff; }
+.stats__rings .v1 { stroke: #6cc490; }
+.stats__rings .v2 { stroke: #8fb3e0; }
 [data-shown] .stats__rings .v1, .card--progress:not([data-reveal]) .v1 { animation: fill1 1.6s 0.3s var(--ease) forwards; }
 [data-shown] .stats__rings .v2, .card--progress:not([data-reveal]) .v2 { animation: fill2 1.6s 0.45s var(--ease) forwards; }
 @keyframes fill1 { to { stroke-dashoffset: 12; } }
 @keyframes fill2 { to { stroke-dashoffset: 26; } }
 .stats__bars { display: flex; gap: 6px; align-items: flex-end; height: 110px; }
-.stats__bars i { width: 10px; height: var(--h); border-radius: 5px; background: linear-gradient(#2997ff, #a259ff); }
+.stats__bars i { width: 10px; height: var(--h); border-radius: 5px; background: linear-gradient(#8fb3e0, #5b86bd); }
+
+/* the road under the strip; the car's position comes from the strip's scroll (--car-x) */
+.lane {
+  position: relative;
+  height: 54px;
+  margin: 4px 0 18px;
+  background: linear-gradient(#cfdfc7 0 8px, #646b76 8px 50px, #e6e2d8 50px);
+}
+.lane__dashes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 28px;
+  height: 5px;
+  background: repeating-linear-gradient(90deg, #f3eee2 0 54px, transparent 54px 96px);
+}
+.lane__car {
+  position: absolute;
+  left: max(var(--gutter), calc((100vw - var(--max)) / 2));
+  bottom: 6px;
+  width: 90px;
+  transform: translateX(var(--car-x, 0px));
+}
 
 .gallery__nav { display: flex; justify-content: flex-end; gap: 12px; }
 .gallery__nav button {

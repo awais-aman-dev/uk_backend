@@ -1,11 +1,11 @@
 <script setup lang="ts">
 const reviews = [
-  { name: 'Amara', meta: '17 · Leeds', score: '49/50', c: 'linear-gradient(135deg,#ff9f0a,#ff375f)', text: 'Did 10 minutes on the bus every day. Walked in, passed first time. The hazard clips are basically the real test.' },
-  { name: 'Callum', meta: '19 · Glasgow', score: '47/50', c: 'linear-gradient(135deg,#64d2ff,#0a84ff)', text: 'Failed once with another app. The explanations here actually made stopping distances click.' },
-  { name: 'Priya', meta: '22 · Leicester', score: '50/50', c: 'linear-gradient(135deg,#30d158,#00c7be)', text: 'The readiness score told me when to book. Hit 93%, booked for Friday, got 50 out of 50.' },
-  { name: 'Josh', meta: '18 · Bristol', score: '45/50', c: 'linear-gradient(135deg,#ffd60a,#ff9f0a)', text: 'Weekly plan the week before my test. Cramming but make it organised. Worth the fiver.' },
-  { name: 'Ellie', meta: '24 · Cardiff', score: '48/50', c: 'linear-gradient(135deg,#bf5af2,#5e5ce6)', text: 'I hate studying, but the videos are so short I kept doing “just one more”.' },
-  { name: 'Tomasz', meta: '21 · Manchester', score: '46/50', c: 'linear-gradient(135deg,#66d4cf,#30b0c7)', text: 'English is my second language — the plain-English lessons helped me a lot. Passed first try.' }
+  { name: 'Amara', meta: '17 · Leeds', score: '49/50', c: 'linear-gradient(135deg,#efc066,#d9776f)', text: 'Did 10 minutes on the bus every day. Walked in, passed first time. The hazard clips are basically the real test.' },
+  { name: 'Callum', meta: '19 · Glasgow', score: '47/50', c: 'linear-gradient(135deg,#9cc0ea,#5b86bd)', text: 'Failed once with another app. The explanations here actually made stopping distances click.' },
+  { name: 'Priya', meta: '22 · Leicester', score: '50/50', c: 'linear-gradient(135deg,#8fd9ad,#5aa9a0)', text: 'The readiness score told me when to book. Hit 93%, booked for Friday, got 50 out of 50.' },
+  { name: 'Josh', meta: '18 · Bristol', score: '45/50', c: 'linear-gradient(135deg,#f3d68e,#e3a96b)', text: 'Weekly plan the week before my test. Cramming but make it organised. Worth the fiver.' },
+  { name: 'Ellie', meta: '24 · Cardiff', score: '48/50', c: 'linear-gradient(135deg,#b9a6dc,#7f86c9)', text: 'I hate studying, but the videos are so short I kept doing “just one more”.' },
+  { name: 'Tomasz', meta: '21 · Manchester', score: '46/50', c: 'linear-gradient(135deg,#9fd6d0,#5f9fb8)', text: 'English is my second language — the plain-English lessons helped me a lot. Passed first try.' }
 ]
 </script>
 
@@ -34,7 +34,7 @@ const reviews = [
               <strong>{{ r.name }}</strong>
               <small>{{ r.meta }}</small>
             </div>
-            <span class="review__pass">Passed first time</span>
+            <span class="review__plate" title="Passed first time" aria-label="Passed first time">P</span>
           </div>
           <p>“{{ r.text }}”</p>
           <div class="review__score">Theory score <b>{{ r.score }}</b></div>
@@ -45,7 +45,7 @@ const reviews = [
 </template>
 
 <style scoped>
-.testimonials { overflow: hidden; background: var(--card); }
+.testimonials { overflow: hidden; background: #fff; }
 .marquee {
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
@@ -69,7 +69,7 @@ const reviews = [
   gap: 18px;
   padding: 28px;
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: #f6f4ee;
 }
 .review__top { display: flex; align-items: center; gap: 12px; }
 .review__top div { display: grid; line-height: 1.25; }
@@ -84,7 +84,22 @@ const reviews = [
   color: #fff;
   font-weight: 600;
 }
-.review__pass { margin-left: auto; font-size: 0.8125rem; font-weight: 500; color: var(--go-text); }
+.review__plate {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-left: auto;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px #d6dce3, 0 6px 14px -6px rgb(38 48 59 / 0.3);
+  color: #4fae76;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  transform: rotate(-4deg);
+}
 .review p { flex: 1; font-size: 1.0625rem; line-height: 1.45; }
 .review__score { font-size: 0.875rem; color: var(--muted); }
 .review__score b { color: var(--ink); font-weight: 600; }

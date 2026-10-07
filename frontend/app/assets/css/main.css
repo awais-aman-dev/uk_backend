@@ -432,3 +432,49 @@ select.field__input { appearance: none; padding-right: 44px; cursor: pointer; }
 .learn .btn:not(.btn--primary):not(.btn--ghost):not(.btn--ghost-dark) { --btn-bg: var(--ink); --btn-fg: var(--paper); }
 .learn .btn--ghost { --btn-bg: rgb(127 127 127 / 0.14); --btn-fg: var(--ink); }
 .learn .field__control { background: var(--card); }
+
+/* ==========================================================================
+   Landing — soft "road" theme: sky, sage verges, asphalt, cream lane lines,
+   softened sign colours (no hi-vis). Scoped to .landing so the app is untouched.
+   ========================================================================== */
+.landing {
+  --road-ink: #26303b;
+  --road-muted: #5d6874;
+  --road-blue: #3f74b8;
+  --road-blue-sign: #5b86bd;
+  --road-blue-soft: #e4edf7;
+  --road-red: #d9776f;
+  --road-amber: #efc066;
+  --road-green: #6cc490;
+  --road-green-text: #2f8a57;
+  --road-asphalt: #5d646f;
+  --road-line: #f3eee2;
+  --road-grass: #cfdfc7;
+  --road-cream: #f4f1e9;
+  --road-night: #1f2a3d;
+  --road-night-2: #2b3a52;
+  --muted: var(--road-muted);
+  --go: #6cc490;
+  --go-soft: #e8f5ec;
+  --go-text: #2f8a57;
+  --stop: #e47c72;
+  --stop-soft: #fbeceb;
+  --stop-text: #b4524a;
+  --gradient: linear-gradient(90deg, #3f74b8, #6cc490);
+  --paper: #f6f4ee;
+  --ink: var(--road-ink);
+  --text: var(--road-ink);
+}
+.landing .eyebrow { background: none; color: var(--road-blue); -webkit-text-fill-color: currentColor; }
+/* a highlighted word gets a dashed lane-marking underline instead of a gradient */
+.landing .mark {
+  background: none;
+  color: var(--road-blue);
+  -webkit-text-fill-color: currentColor;
+  text-decoration: underline dashed var(--road-amber);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.12em;
+}
+.landing .section--dark { background: linear-gradient(180deg, var(--road-night), var(--road-night-2)); }
+.landing .section--dark .eyebrow,
+.landing .section--dark .mark { color: #9cc0ea; }

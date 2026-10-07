@@ -65,7 +65,7 @@ summary {
   line-height: 1.25;
 }
 summary::-webkit-details-marker { display: none; }
-summary:hover { color: var(--accent); }
+summary:hover { color: var(--road-blue); }
 summary span {
   position: relative;
   flex: none;

@@ -4,7 +4,7 @@ useLandingMotion(root)
 </script>
 
 <template>
-  <div ref="root">
+  <div ref="root" class="landing">
     <LandingHero />
     <LandingBenefits />
     <LandingFeatures />
@@ -15,5 +15,6 @@ useLandingMotion(root)
     <LandingFaq />
     <LandingFinalCta />
     <StickyCta />
+    <LandingProgress />
   </div>
 </template>

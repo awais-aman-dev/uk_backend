@@ -23,8 +23,8 @@ const { data } = useFetch('/api/demo/hazard', { server: false, lazy: true })
   position: relative;
   padding: 8px;
   border-radius: 30px;
-  background: linear-gradient(160deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0.04) 40%, rgb(255 255 255 / 0.1));
-  box-shadow: 0 40px 120px -30px rgb(41 151 255 / 0.45), 0 30px 60px -30px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.55) 45%, rgb(255 255 255 / 0.8));
+  box-shadow: 0 40px 90px -36px rgb(38 64 99 / 0.45), 0 18px 40px -24px rgb(38 48 59 / 0.35), inset 0 1px 0 #fff;
 }
 /* windscreen glare, above the clip but never catching clicks */
 .drive__glass::after {
@@ -40,8 +40,8 @@ const { data } = useFetch('/api/demo/hazard', { server: false, lazy: true })
 .drive__placeholder span { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgb(255 255 255 / 0.6); border-right-color: transparent; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.drive__caption { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 10px; margin-top: 16px; font-size: 0.875rem; color: var(--muted-dark); }
-.drive__live { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 980px; background: rgb(255 55 95 / 0.15); color: #ff6482; font-weight: 600; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.drive__caption { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 10px; margin-top: 16px; font-size: 0.875rem; color: var(--hero-muted, var(--muted)); }
+.drive__live { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 980px; background: rgb(217 119 111 / 0.14); color: #c4625a; font-weight: 600; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
 .drive__live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: blink 1.6s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
 
