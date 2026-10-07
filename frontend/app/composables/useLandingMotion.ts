@@ -74,12 +74,12 @@ export function useLandingMotion(root: Ref<HTMLElement | undefined>) {
         if (desktop && hero && signs.length) {
           const movers = signs.map((sign) => {
             const depth = Number(sign.dataset.depth) || 1
-            return { depth, x: gsap.quickTo(sign, 'x', { duration: 0.9, ease: 'power3.out' }), turn: gsap.quickTo(sign, 'rotationY', { duration: 0.9, ease: 'power3.out' }) }
+            return { depth, inMargin: !sign.classList.contains('float-sign--free'), x: gsap.quickTo(sign, 'x', { duration: 0.9, ease: 'power3.out' }), turn: gsap.quickTo(sign, 'rotationY', { duration: 0.9, ease: 'power3.out' }) }
           })
           const onMove = (e: PointerEvent) => {
             const dx = e.clientX / window.innerWidth - 0.5
             for (const m of movers) {
-              m.x(dx * 40 * m.depth)
+              if (!m.inMargin) m.x(dx * 16 * m.depth) // signs in the page margin only turn: sliding would reach the content
               m.turn(dx * 14 * m.depth)
             }
           }

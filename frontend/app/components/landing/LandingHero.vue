@@ -5,16 +5,27 @@ import type { SignSpec } from '#shared/types/learn'
 const RED = '#d9776f'
 const BLUE = '#5b86bd'
 
-// Background signs: position (% of the hero), size (px), resting tilt and depth (parallax strength).
-// `m`: shown on phones too, small, at that edge in the gap between the copy and the clip.
-const signs: { spec: SignSpec; label: string; x: number; y: number; size: number; tilt: number; depth: number; m?: 'left' | 'right' }[] = [
-  { spec: { shape: 'circle', fill: '#fff', border: RED, symbol: 'text', text: '30' }, label: '30 mph', x: 4, y: 14, size: 92, tilt: 7, depth: 1.2, m: 'left' },
-  { spec: { shape: 'triangle', fill: '#fff', border: RED, symbol: 'signals' }, label: 'Traffic signals', x: 60, y: 9, size: 62, tilt: -6, depth: 0.6 },
-  { spec: { shape: 'circle', fill: BLUE, symbol: 'mini-roundabout' }, label: 'Mini-roundabout', x: 90, y: 10, size: 78, tilt: -8, depth: 1, m: 'right' },
-  { spec: { shape: 'circle', fill: RED, symbol: 'no-entry' }, label: 'No entry', x: 2, y: 58, size: 64, tilt: 8, depth: 0.8 },
-  { spec: { shape: 'triangle', fill: '#fff', border: RED, symbol: 'bend-left' }, label: 'Bend', x: 93, y: 52, size: 60, tilt: -7, depth: 1.4 },
+const SPEED_30: SignSpec = { shape: 'circle', fill: '#fff', border: RED, symbol: 'text', text: '30' }
+const ROUNDABOUT: SignSpec = { shape: 'circle', fill: BLUE, symbol: 'mini-roundabout' }
+const SIGNALS: SignSpec = { shape: 'triangle', fill: '#fff', border: RED, symbol: 'signals' }
+
+// Desktop background signs (≥1024px), never over the content:
+//  - `side`: in the page margin at that edge (y = % of the hero), shrunk to fit it, hidden when it's too narrow;
+//  - `x`: free spots between the columns / above the clip (x, y = % of the hero).
+// depth = parallax strength, tilt = resting turn.
+type Placed = { spec: SignSpec; label: string; y: number; size: number; tilt: number; depth: number } & ({ side: 'left' | 'right' } | { x: number })
+const signs: Placed[] = [
+  { spec: SPEED_30, label: '30 mph', side: 'left', y: 16, size: 88, tilt: 7, depth: 1.2 },
+  { spec: { shape: 'circle', fill: RED, symbol: 'no-entry' }, label: 'No entry', side: 'left', y: 58, size: 64, tilt: 8, depth: 0.8 },
+  { spec: ROUNDABOUT, label: 'Mini-roundabout', side: 'right', y: 10, size: 76, tilt: -8, depth: 1 },
+  { spec: SIGNALS, label: 'Traffic signals', x: 60, y: 9, size: 62, tilt: -6, depth: 0.6 },
   { spec: { shape: 'square', fill: BLUE, symbol: 'P' }, label: 'Parking', x: 46, y: 69, size: 44, tilt: 5, depth: 0.5 }
 ]
+const placeOf = (s: Placed) => ('side' in s ? `float-sign--${s.side}` : 'float-sign--free')
+const styleOf = (s: Placed) => ({ '--x': 'x' in s ? `${s.x}%` : undefined, '--y': `${s.y}%`, '--size': `${s.size}px`, '--tilt': `${s.tilt}deg` })
+
+// Phones and tablets: a row of signs in the page flow, between the copy and the clip — it can't overlap anything
+const roadside = [SPEED_30, SIGNALS, ROUNDABOUT]
 
 const title = ['The', 'easy', 'way', 'to', 'pass', 'your', 'theory', 'test.']
 </script>
@@ -28,9 +39,9 @@ const title = ['The', 'easy', 'way', 'to', 'pass', 'your', 'theory', 'test.']
         v-for="s in signs"
         :key="s.label"
         class="float-sign"
-        :class="s.m ? `float-sign--m-${s.m}` : 'float-sign--desktop'"
+        :class="placeOf(s)"
         :data-depth="s.depth"
-        :style="{ '--x': `${s.x}%`, '--y': `${s.y}%`, '--size': `${s.size}px`, '--tilt': `${s.tilt}deg` }"
+        :style="styleOf(s)"
       >
         <div class="float-sign__plate"><LearnSignGraphic :spec="s.spec" /></div>
       </div>
@@ -54,6 +65,10 @@ const title = ['The', 'easy', 'way', 'to', 'pass', 'your', 'theory', 'test.']
         <p v-reveal="360" class="hero__proof">
           Rated <b>4.8</b> by 2,300+ learners · <b>91%</b> pass first time
         </p>
+      </div>
+
+      <div class="hero__roadside" aria-hidden="true">
+        <span v-for="(spec, i) in roadside" :key="i" class="hero__roadsign"><LearnSignGraphic :spec="spec" /></span>
       </div>
 
       <div class="hero__visual">
@@ -176,18 +191,46 @@ const title = ['The', 'easy', 'way', 'to', 'pass', 'your', 'theory', 'test.']
   .hero__copy { justify-items: start; text-align: left; }
   .hero__ctas { justify-content: flex-start; }
 }
+/* Margin signs: centred in the page margin and never wider than it (minus breathing room) */
+.float-sign--left,
+.float-sign--right {
+  --gut: max(var(--gutter), calc((100vw - var(--max)) / 2)); /* where the content starts */
+  --w: min(var(--size), calc(var(--gut) - 24px));
+  width: var(--w);
+}
+.float-sign--left { left: calc((var(--gut) - var(--w)) / 2); }
+.float-sign--right { left: auto; right: calc((var(--gut) - var(--w)) / 2); }
+/* wide screens show the scroll-progress road at the right edge (LandingProgress, 36px): keep right signs clear of it */
+@media (min-width: 1200px) {
+  .float-sign--right {
+    --w: min(var(--size), calc(var(--gut) - 36px - 24px));
+    right: calc(36px + (var(--gut) - 36px - var(--w)) / 2);
+  }
+}
+@media (max-width: 1359px) {
+  .float-sign--right { display: none; }
+}
+/* too narrow a margin for a readable sign → leave it out */
+@media (max-width: 1239px) {
+  .float-sign--left, .float-sign--right { display: none; }
+}
+
+/* Phones and tablets: the roadside row instead of the background signs */
+.hero__roadside { display: flex; justify-content: center; align-items: flex-end; gap: 22px; margin: -6px 0 20px; /* room for the clip's 3D tilt below */ }
+.hero__roadsign { width: 46px; filter: drop-shadow(0 10px 12px rgb(38 48 59 / 0.15)); animation: hover 9s ease-in-out infinite; }
+.hero__roadsign:nth-child(2) { width: 50px; animation-delay: -3s; }
+.hero__roadsign:nth-child(3) { animation-delay: -6s; }
+@media (min-width: 1024px) {
+  .hero__roadside { display: none; }
+}
 @media (max-width: 1023px) {
-  .float-sign--desktop { display: none; }
+  .hero__signs { display: none; }
 }
 @media (max-width: 719px) {
   .hero { padding-top: calc(var(--header-h) + 36px); }
   .hero__ctas { flex-direction: column; gap: 14px; }
-  /* phones: two small signs at the edges, in the gap between the copy and the clip */
-  .float-sign { top: 566px; width: 48px; }
-  .float-sign--m-left { left: 16px; }
-  .float-sign--m-right { left: auto; right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero__sky i, .float-sign__plate { animation: none; }
+  .hero__sky i, .float-sign__plate, .hero__roadsign { animation: none; }
 }
 </style>
