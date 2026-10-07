@@ -26,9 +26,13 @@ from apps.learning.models import (
     ContentType,
     ExamQuestion,
     LearningContent,
+    LessonProgress,
+    MockAttempt,
     PracticeExam,
     Question,
+    QuestionAttempt,
     QuestionOption,
+    SavedQuestion,
     Sign,
     Subchapter,
 )
@@ -439,3 +443,60 @@ class PracticeExamAdmin(PublishableAdmin):
     @admin.display(description="Questions")
     def question_count(self, exam: PracticeExam) -> int:
         return exam.questions.count()
+
+
+# --- What students have done ---------------------------------------------------------------------
+#
+# Records of a person, not of the course, so they are read-only everywhere: staff look at them to
+# answer "how is this student getting on", and nothing good comes of editing somebody's history.
+
+
+class ReadOnlyAdmin(admin.ModelAdmin):
+    """Shows records without offering a way to change them."""
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
+
+
+@admin.register(QuestionAttempt)
+class QuestionAttemptAdmin(ReadOnlyAdmin):
+    list_display = ["student", "question", "was_correct", "created_at"]
+    list_filter = ["was_correct", "question__chapter", "created_at"]
+    search_fields = ["student__email", "question__key", "question__prompt"]
+    list_select_related = ["student", "question"]
+    date_hierarchy = "created_at"
+
+
+@admin.register(MockAttempt)
+class MockAttemptAdmin(ReadOnlyAdmin):
+    list_display = ["student", "exam", "result", "passed", "created_at"]
+    list_filter = ["passed", "exam", "created_at"]
+    search_fields = ["student__email", "exam__title"]
+    list_select_related = ["student", "exam"]
+    date_hierarchy = "created_at"
+
+    @admin.display(description="Score")
+    def result(self, attempt: MockAttempt) -> str:
+        return f"{attempt.score}/{attempt.total}"
+
+
+@admin.register(LessonProgress)
+class LessonProgressAdmin(ReadOnlyAdmin):
+    list_display = ["student", "subchapter", "completed_at"]
+    list_filter = ["subchapter__chapter", "completed_at"]
+    search_fields = ["student__email", "subchapter__title"]
+    list_select_related = ["student", "subchapter"]
+    date_hierarchy = "completed_at"
+
+
+@admin.register(SavedQuestion)
+class SavedQuestionAdmin(ReadOnlyAdmin):
+    list_display = ["student", "question", "saved_at"]
+    search_fields = ["student__email", "question__key"]
+    list_select_related = ["student", "question"]

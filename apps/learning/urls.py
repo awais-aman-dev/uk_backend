@@ -14,4 +14,9 @@ urlpatterns = [
     path("learn/exams/", api.ExamListView.as_view(), name="learn-exams"),
     path("learn/exams/<slug:slug>/", api.ExamDetailView.as_view(), name="learn-exam"),
     path("learn/exams/<slug:slug>/submit/", api.ExamSubmitView.as_view(), name="learn-exam-submit"),
+    # What the student has done. Recorded by the endpoints above where it can be, and by these
+    # where only the student can say so.
+    path("learn/lessons/<slug:slug>/complete/", api.LessonCompleteView.as_view(), name="learn-lesson-complete"),
+    path("learn/questions/<slug:key>/saved/", api.SavedQuestionView.as_view(), name="learn-question-saved"),
+    path("learn/progress/", api.ProgressView.as_view(), name="learn-progress"),
 ]

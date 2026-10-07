@@ -342,3 +342,31 @@ class ExamResultResponseSerializer(serializers.Serializer):
     passMark = serializers.IntegerField()  # noqa: N815
     passed = serializers.BooleanField()
     questions = ExamQuestionResultSerializer(many=True, help_text="Every question, answered or not.")
+
+
+# --- Progress ------------------------------------------------------------------------------------
+
+
+class ProgressSummaryResponseSerializer(serializers.Serializer):
+    """The headline numbers for the Today screen, all worked out from the student's attempts."""
+
+    streak = serializers.IntegerField(help_text="Days in a row studied. Today not being used yet does not break it.")
+    studyDays = serializers.IntegerField(help_text="How many separate days they have studied.")  # noqa: N815
+    lastStudiedOn = serializers.DateField(allow_null=True)  # noqa: N815
+    questionsAnswered = serializers.IntegerField(help_text="Distinct questions attempted.")  # noqa: N815
+    questionsLearnt = serializers.IntegerField(help_text="Distinct questions answered correctly.")  # noqa: N815
+    mastery = serializers.IntegerField(help_text="Questions learnt as a percentage of the whole bank.")
+    lessonsCompleted = serializers.IntegerField()  # noqa: N815
+    mockAttempts = serializers.IntegerField()  # noqa: N815
+    mocksPassed = serializers.IntegerField()  # noqa: N815
+    bestMockScore = serializers.IntegerField(allow_null=True)  # noqa: N815
+
+
+class DoneResponseSerializer(serializers.Serializer):
+    """The reply to marking something done. Marking it twice says the same thing."""
+
+    done = serializers.BooleanField()
+
+
+class SavedResponseSerializer(serializers.Serializer):
+    saved = serializers.BooleanField()
