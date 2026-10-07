@@ -164,6 +164,11 @@ CACHES = {
 
 DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="1Theory <info@1theory.co.uk>")
 
+# Django passes this straight to smtplib, and without it a socket can wait indefinitely. Sending
+# happens in a worker now, but a worker stuck forever on one message stops sending every other
+# one, so the wait is bounded wherever it happens.
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+
 # --- Background work -----------------------------------------------------------------------------
 # Redis is both the cache and the Celery queue; different database numbers keep them apart.
 

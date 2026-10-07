@@ -4,12 +4,39 @@ Templates live in ``templates/emails/``. Each message has an HTML template and a
 ``.txt`` template, because mail clients that cannot show HTML should still get readable text.
 """
 
+import logging
+
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
+logger = logging.getLogger(__name__)
+
 
 def send(template: str, subject: str, to: str, context: dict) -> None:
+    """Hand one message to a worker to send, and return.
+
+    Nothing in a request should wait for a mail server. One gunicorn worker serves the whole site
+    on the free plan, so a slow SMTP connection holds up every other request behind it — the
+    health check included, which the platform reads as a dead service and restarts. Registration
+    did exactly that: forty-six seconds inside ``send``, then a minute of the site being down.
+
+    ``context`` is sent to the worker, so it must hold only values that survive JSON — strings
+    and numbers, not model instances.
+
+    If the queue cannot be reached the message is sent here instead, because an email that never
+    arrives is worse than a slow request, and :setting:`EMAIL_TIMEOUT` bounds how slow that can be.
+    """
+    from apps.core.tasks import send_email
+
+    try:
+        send_email.delay(template=template, subject=subject, to=to, context=context)
+    except Exception:
+        logger.exception("Could not queue the %s email, sending it here instead", template)
+        send_now(template=template, subject=subject, to=to, context=context)
+
+
+def send_now(template: str, subject: str, to: str, context: dict) -> None:
     """Render ``emails/<template>.html`` and ``.txt`` and send them to one recipient.
 
     Raises whatever the mail backend raises; the caller decides whether a failure should fail
