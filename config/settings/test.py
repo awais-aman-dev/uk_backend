@@ -27,6 +27,13 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # because tests run in a single process.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
+# Uploads are held in memory: the suite needs no bucket, no credentials and no network, and
+# leaves nothing behind on disk.
+STORAGES = {  # noqa: F405
+    **STORAGES,  # noqa: F405
+    "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+}
+
 # Tests never run collectstatic; let WhiteNoise find files on demand instead of from STATIC_ROOT.
 WHITENOISE_AUTOREFRESH = True
 

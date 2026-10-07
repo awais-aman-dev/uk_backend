@@ -91,3 +91,24 @@ services:
       # Blank is valid; Google sign-in stays refused until it is set.
       - key: GOOGLE_CLIENT_IDS
         sync: false
+
+      # --- Uploaded files ---------------------------------------------------------------------
+      # An S3-compatible bucket, because this service's own disk is wiped on every deploy.
+      # Currently Cloudflare R2, which has no regions — hence "auto". Use a different bucket
+      # from the one used in development, so a mistake here cannot reach the other's files.
+      - key: S3_BUCKET_NAME
+        value: 1theory-prod
+      # https://<cloudflare account id>.r2.cloudflarestorage.com
+      - key: S3_ENDPOINT_URL
+        sync: false
+      # An R2 API token scoped to the bucket above, with Object Read & Write.
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto
+      # How long a signed file URL lasts: long enough to watch a video, short enough that a
+      # shared link stops working.
+      - key: S3_URL_EXPIRY_SECONDS
+        value: 3600

@@ -24,3 +24,10 @@ urlpatterns = [
     path("api/", include("apps.billing.urls")),
     path("api/", include("apps.learning.urls")),
 ]
+
+if settings.DEBUG and not settings.S3_BUCKET_NAME:
+    # Only for the filesystem fallback. With a bucket configured, files are served from it by
+    # signed URL and Django never sees the request.
+    from django.conf.urls.static import static
+
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

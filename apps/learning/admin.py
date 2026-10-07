@@ -9,6 +9,8 @@ subchapter lists its material — while each item is written on its own page, be
 editor inside a nested inline is unusable.
 """
 
+from typing import cast
+
 from django import forms
 from django.contrib import admin, messages
 from django.http import HttpRequest, HttpResponse
@@ -18,6 +20,7 @@ from django.utils.html import format_html, format_html_join
 from django.utils.safestring import SafeString, mark_safe
 from django_ckeditor_5.widgets import CKEditor5Widget  # type: ignore[import-untyped]  # ships no types
 
+from apps.accounts.models import User
 from apps.core.models import PublishStatus
 from apps.learning import services
 from apps.learning.models import (
@@ -27,6 +30,7 @@ from apps.learning.models import (
     ExamQuestion,
     LearningContent,
     LessonProgress,
+    MediaAsset,
     MockAttempt,
     PracticeExam,
     Question,
@@ -65,6 +69,7 @@ class ContentForm(forms.ModelForm):
             "slug",
             "body_html",
             "question",
+            "media",
             "order",
             "only_for_packages",
             "publish_from",
@@ -300,15 +305,18 @@ class LearningContentAdmin(PreviewMixin, PublishableAdmin):
     search_fields = ["title", "slug"]
     prepopulated_fields = {"slug": ("title",)}
     list_select_related = ["subchapter", "subchapter__chapter"]
-    autocomplete_fields = ["subchapter", "question"]
+    autocomplete_fields = ["subchapter", "question", "media"]
     filter_horizontal = ["only_for_packages"]
     fieldsets = (
         (None, {"fields": ("subchapter", "content_type", "title", "slug", "order")}),
         (
             "Content",
             {
-                "fields": ("body_html", "question"),
-                "description": "Theory material uses the text; question material uses the question.",
+                "fields": ("body_html", "question", "media"),
+                "description": (
+                    "Theory uses the text, question material uses the question, and video and "
+                    "document material use a file from the media library."
+                ),
             },
         ),
         (
@@ -500,3 +508,54 @@ class SavedQuestionAdmin(ReadOnlyAdmin):
     list_display = ["student", "question", "saved_at"]
     search_fields = ["student__email", "question__key"]
     list_select_related = ["student", "question"]
+
+
+@admin.register(MediaAsset)
+class MediaAssetAdmin(admin.ModelAdmin):
+    """The media library: files staff have uploaded, used by reference from content.
+
+    Uploads go through here rather than straight from the browser to the bucket, so the bucket's
+    credentials stay on the server and nothing arrives in it that staff did not put there.
+    """
+
+    list_display = ["title", "kind", "readable_size", "duration_seconds", "used_by", "created_at"]
+    list_filter = ["kind", "created_at"]
+    search_fields = ["title", "file"]
+    readonly_fields = ["size_bytes", "content_type", "uploaded_by", "created_at", "download_link"]
+    fieldsets = (
+        (None, {"fields": ("title", "kind", "file", "duration_seconds")}),
+        (
+            "About the file",
+            {
+                "fields": ("size_bytes", "content_type", "uploaded_by", "created_at", "download_link"),
+                "description": "Taken from the upload itself. The link is signed and expires.",
+            },
+        ),
+    )
+
+    @admin.display(description="Size", ordering="size_bytes")
+    def readable_size(self, asset: MediaAsset) -> str:
+        size = float(asset.size_bytes)
+        for unit in ("bytes", "KB", "MB", "GB"):
+            if size < 1024 or unit == "GB":
+                return f"{size:.0f} {unit}" if unit == "bytes" else f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} GB"
+
+    @admin.display(description="Used by")
+    def used_by(self, asset: MediaAsset) -> str:
+        """How many content items refer to this file, so staff can see what a deletion affects."""
+        count = asset.used_in.count()
+        return f"{count} item{'' if count == 1 else 's'}"
+
+    @admin.display(description="File")
+    def download_link(self, asset: MediaAsset) -> SafeString:
+        if not asset.file:
+            return placeholder()
+        return format_html('<a class="adm-btn" href="{}" target="_blank">Open the file</a>', asset.file.url)
+
+    def save_model(self, request: HttpRequest, obj: MediaAsset, form, change: bool) -> None:
+        # Recorded here because the request knows who is uploading and the model does not.
+        if not change:
+            obj.uploaded_by = cast(User, request.user)
+        super().save_model(request, obj, form, change)

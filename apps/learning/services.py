@@ -23,6 +23,7 @@ from apps.learning.models import (
     ContentType,
     LearningContent,
     LessonProgress,
+    MediaKind,
     MockAttempt,
     PracticeExam,
     Question,
@@ -163,6 +164,16 @@ def _problems_with_content(content: LearningContent) -> list[str]:
             problems.append("No question has been chosen from the bank.")
         elif not content.question.is_published:
             problems.append(f"The question '{content.question.key}' is not published yet.")
+    elif content.content_type in MEDIA_CONTENT_TYPES:
+        wanted = MEDIA_CONTENT_TYPES[ContentType(content.content_type)]
+        if content.media is None:
+            problems.append("No file has been chosen from the media library.")
+        elif content.media.kind != wanted:
+            # Otherwise the frontend would be told to play a PDF, or to download a video.
+            problems.append(
+                f"'{content.media.title}' is {content.media.get_kind_display().lower()}, "
+                f"but this is {ContentType(content.content_type).label.lower()} material."
+            )
     elif html.is_empty(content.body_html):
         problems.append("There is no content yet.")
 
@@ -310,15 +321,34 @@ def answer_sheet_for(question: Question) -> dict:
     }
 
 
+#: Which kind of file each media content type expects, so one cannot be published with the other.
+MEDIA_CONTENT_TYPES = {
+    ContentType.VIDEO: MediaKind.VIDEO,
+    ContentType.DOCUMENT: MediaKind.DOCUMENT,
+}
+
+
 def block_for(content: LearningContent) -> dict:
     """One content item as the frontend reads it.
 
-    The frontend takes content as a list of blocks, so theory is served as a single HTML block and
-    a question as a check block naming the question. Both are shapes the frontend already renders,
-    so neither needs a new renderer.
+    The frontend takes content as a list of blocks: theory is one HTML block, a question is a
+    check block naming the question, and a file is a video or document block carrying a URL.
+
+    That URL is signed and expires, and it is built here — at the moment of serving — rather than
+    stored, so a link cannot be kept or shared beyond its lifetime. The caller has already decided
+    this student may see the content, which is what earns them the URL.
     """
     if content.content_type == ContentType.QUESTION and content.question:
         return {"type": "check", "questions": [content.question.key], "title": content.title}
+
+    if content.content_type in MEDIA_CONTENT_TYPES and content.media:
+        return {
+            "type": content.content_type,
+            "title": content.title,
+            "url": content.media.file.url,
+            "durationSeconds": content.media.duration_seconds,
+        }
+
     return {"type": "html", "html": content.body_html, "title": content.title}
 
 
