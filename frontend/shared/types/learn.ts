@@ -143,6 +143,25 @@ export interface HazardClipDto {
   scene: HazardScene
 }
 
+/**
+ * A filmed clip from the Django backend: a real video, scored there. Hazard timings are withheld until
+ * the attempt is scored, like ours; the length may be unknown until the video's metadata loads.
+ */
+export interface HazardVideoClipDto {
+  kind: 'video'
+  slug: string
+  title: string
+  description: string
+  durationMs: number | null
+  hazardCount: number
+  maxClicks: number
+  /** Short-lived signed URL — fetched fresh for every play */
+  url: string
+}
+
+export type AnyHazardClip = HazardClipDto | HazardVideoClipDto
+export const isVideoClip = (c: AnyHazardClip): c is HazardVideoClipDto => 'kind' in c && c.kind === 'video'
+
 export interface HazardResult {
   score: number
   maxScore: number

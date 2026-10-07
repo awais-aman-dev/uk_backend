@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import type { HazardClipDto, HazardResult, SignDto } from '#shared/types/learn'
+import { isVideoClip, type AnyHazardClip, type HazardResult, type SignDto } from '#shared/types/learn'
 
 /*
  * Plays a hazard clip like the real test: click/tap (or Space) when you see a developing hazard.
  * The server scores the clicks and only then reveals the hazard windows, which drive the review.
+ * Two kinds of clip: our animated scenes (time runs on requestAnimationFrame) and filmed videos from the
+ * Django backend (time is read from the <video> itself, so clicks stay exact even while it buffers).
  */
 const props = withDefaults(
   defineProps<{
-    clip: HazardClipDto
+    clip: AnyHazardClip
     signs: Record<string, SignDto>
     next?: string | null
     index?: number
@@ -29,15 +31,25 @@ const error = ref<string>()
 const playing = ref(false)
 const pulses = ref<{ id: number; x: number; y: number }[]>([])
 
-const D = computed(() => props.clip.durationMs)
+const video = computed(() => (isVideoClip(props.clip) ? props.clip : null))
+const scene = computed(() => (isVideoClip(props.clip) ? null : props.clip.scene))
+const videoEl = ref<HTMLVideoElement>()
+const videoMs = ref(0) // length from the video's metadata, when Django doesn't say
+const videoReady = ref(false)
+const videoFailed = ref(false)
+const canStart = computed(() => !video.value || videoReady.value)
+
+const D = computed(() => props.clip.durationMs ?? videoMs.value)
 let raf = 0
 let last = 0
 let countdownTimer: ReturnType<typeof setInterval> | undefined
 
 function loop(now: number) {
-  if (last) t.value = Math.min(D.value, t.value + (now - last))
+  const v = videoEl.value
+  if (v) t.value = Math.min(D.value, v.currentTime * 1000)
+  else if (last) t.value = Math.min(D.value, t.value + (now - last))
   last = now
-  if (t.value >= D.value) {
+  if ((v ? v.ended : false) || (D.value > 0 && t.value >= D.value)) {
     playing.value = false
     if (phase.value === 'playing') submit()
     return
@@ -46,12 +58,14 @@ function loop(now: number) {
 }
 function play() {
   playing.value = true
+  videoEl.value?.play().catch(() => (videoFailed.value = true))
   last = 0
   cancelAnimationFrame(raf)
   raf = requestAnimationFrame(loop)
 }
 function pause() {
   playing.value = false
+  videoEl.value?.pause()
   cancelAnimationFrame(raf)
 }
 onBeforeUnmount(() => {
@@ -76,7 +90,7 @@ function stopIdle() {
   idleLast = 0
 }
 onMounted(() => {
-  if (!props.demo || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (!props.demo || video.value || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
   const io = new IntersectionObserver(([e]) => {
     stopIdle()
     if (e?.isIntersecting && phase.value === 'ready') idleRaf = requestAnimationFrame(idle)
@@ -91,6 +105,10 @@ function start() {
   result.value = null
   error.value = undefined
   t.value = 0
+  if (videoEl.value) {
+    videoEl.value.pause()
+    videoEl.value.currentTime = 0
+  }
   phase.value = 'countdown'
   countdown.value = 3
   clearInterval(countdownTimer)
@@ -129,16 +147,17 @@ async function submit() {
 
 function review() {
   phase.value = 'review'
-  t.value = Math.max(0, (result.value?.windows[0]?.startMs ?? 0) - 4000)
+  seek((result.value?.windows[0]?.startMs ?? 0) - 4000)
   play()
 }
 function seek(ms: number) {
   t.value = Math.min(D.value, Math.max(0, ms))
+  if (videoEl.value) videoEl.value.currentTime = t.value / 1000
 }
 function togglePlay() {
   if (playing.value) pause()
   else {
-    if (t.value >= D.value) t.value = 0
+    if (t.value >= D.value) seek(0)
     play()
   }
 }
@@ -162,7 +181,7 @@ onMounted(() => {
 const activeWindow = computed(() =>
   phase.value === 'review' ? result.value?.windows.find((w) => t.value >= w.startMs - 1200 && t.value <= w.endMs + 600) ?? null : null
 )
-const pct = (ms: number) => `${(ms / D.value) * 100}%`
+const pct = (ms: number) => `${D.value > 0 ? (ms / D.value) * 100 : 0}%`
 const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
 </script>
@@ -171,7 +190,20 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
   <div ref="root" class="hp" :class="[`hp--${phase}`, { 'hp--demo': demo }]">
     <!-- Stage -->
     <div class="hp__stage" @pointerdown="flag">
-      <LearnHazardStage :scene="clip.scene" :t="t" :signs="signs" :highlight="activeWindow?.actor ?? null" />
+      <video
+        v-if="video"
+        ref="videoEl"
+        class="hp__video"
+        :src="video.url"
+        playsinline
+        muted
+        preload="auto"
+        disablepictureinpicture
+        @loadedmetadata="videoMs = Math.round(($event.target as HTMLVideoElement).duration * 1000) || 0"
+        @canplay="videoReady = true"
+        @error="videoFailed = true"
+      />
+      <LearnHazardStage v-else-if="scene" :scene="scene" :t="t" :signs="signs" :highlight="activeWindow?.actor ?? null" />
       <span v-for="p in pulses" :key="p.id" class="hp__pulse" :style="{ left: `${p.x}px`, top: `${p.y}px` }" />
 
       <Transition name="chip">
@@ -184,7 +216,7 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
       <Transition name="fade">
         <div v-if="phase === 'ready'" class="hp__overlay">
           <div v-if="demo" class="hp__card glass-dark">
-            <p class="hp__kicker">Live demo · {{ Math.round(clip.durationMs / 1000) }} seconds</p>
+            <p class="hp__kicker">Live demo · {{ Math.round(D / 1000) }} seconds</p>
             <h2>Can you spot the hazard?</h2>
             <p>Tap the road the moment you see a hazard <b>developing</b>. The earlier, the more points.</p>
             <button type="button" class="btn btn--primary" @click.stop="start" @pointerdown.stop>
@@ -201,8 +233,10 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
               <li><AppIcon name="hazard" :size="18" /> Clicking constantly or in a pattern scores zero.</li>
             </ul>
             <p v-if="clip.hazardCount > 1" class="hp__two">This clip has {{ clip.hazardCount }} hazards.</p>
-            <button type="button" class="btn btn--primary btn--lg" @click.stop="start" @pointerdown.stop>
-              <AppIcon name="play" :size="16" /> Start clip
+            <UiAlert v-if="videoFailed">The video couldn’t be loaded. Check your connection and reload the page.</UiAlert>
+            <button type="button" class="btn btn--primary btn--lg" :disabled="!canStart" @click.stop="start" @pointerdown.stop>
+              <template v-if="canStart"><AppIcon name="play" :size="16" /> Start clip</template>
+              <template v-else><span class="hp__mini-spinner" aria-hidden="true" /> Loading video…</template>
             </button>
           </div>
         </div>
@@ -259,7 +293,7 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
           </div>
           <span v-for="(c, i) in result.clicks" :key="i" class="hp__flag" :style="{ left: pct(c) }"><AppIcon name="flag" :size="14" /></span>
           <span class="hp__head" :style="{ left: pct(t) }" />
-          <input type="range" min="0" :max="clip.durationMs" step="10" :value="t" aria-label="Seek" @input="seek(+($event.target as HTMLInputElement).value)">
+          <input type="range" min="0" :max="D" step="10" :value="t" aria-label="Seek" @input="seek(+($event.target as HTMLInputElement).value)">
         </div>
         <button type="button" class="btn btn--ghost-dark btn--sm" @click="phase = 'result'; pause()">Done</button>
       </template>
@@ -277,7 +311,10 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
 <style scoped>
 .hp { display: grid; grid-template-rows: 1fr auto; height: 100%; background: #000; color: #f5f5f7; }
 .hp__stage { position: relative; display: grid; place-items: center; overflow: hidden; touch-action: manipulation; cursor: crosshair; }
-.hp__stage > :deep(.hazard-stage) { width: 100%; height: 100%; max-height: calc(100dvh - 140px); aspect-ratio: 16 / 9; }
+.hp__stage > :deep(.hazard-stage),
+.hp__video { width: 100%; height: 100%; max-height: calc(100dvh - 140px); aspect-ratio: 16 / 9; }
+.hp__video { display: block; object-fit: contain; background: #000; pointer-events: none; }
+.hp__mini-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
 .hp--ready .hp__stage, .hp--result .hp__stage, .hp--review .hp__stage { cursor: default; }
 
 .hp__pulse { position: absolute; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; border: 3px solid #ff375f; pointer-events: none; animation: pulse 0.7s var(--ease) forwards; }

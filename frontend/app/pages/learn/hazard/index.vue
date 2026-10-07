@@ -6,7 +6,7 @@ const { data } = await useFetch('/api/learn/hazard')
 
 const total = computed(() => (data.value?.clips ?? []).reduce((s, c) => s + (c.best ?? 0), 0))
 const max = computed(() => (data.value?.clips ?? []).reduce((s, c) => s + c.maxScore, 0))
-const fmt = (ms: number) => `0:${String(Math.round(ms / 1000)).padStart(2, '0')}`
+const fmt = (ms: number | null) => (ms ? `${Math.floor(ms / 60000)}:${String(Math.round(ms / 1000) % 60).padStart(2, '0')}` : '')
 const lightingLabel = { day: 'Daytime', dusk: 'Dusk', night: 'Night' } as const
 </script>
 
@@ -23,12 +23,14 @@ const lightingLabel = { day: 'Daytime', dusk: 'Dusk', night: 'Night' } as const
       <NuxtLink v-for="(c, i) in data.clips" :key="c.slug" :to="`/learn/hazard/${c.slug}`" class="clip">
         <div class="clip__thumb">
           <LearnHazardLoop v-if="c.scene" :scene="c.scene" :signs="data.signs" mode="hover" />
+          <span v-else-if="c.video" class="clip__filmed" aria-hidden="true" />
           <span class="clip__play glass-dark"><AppIcon name="play" :size="20" /></span>
-          <span class="clip__dur glass-dark">{{ fmt(c.durationMs) }}</span>
-          <span v-if="!c.scene" class="clip__lock glass-dark"><AppIcon name="lock" :size="16" /> Plan needed</span>
+          <span v-if="c.durationMs" class="clip__dur glass-dark">{{ fmt(c.durationMs) }}</span>
+          <span v-if="c.video" class="clip__tag glass-dark"><AppIcon name="video" :size="14" /> Filmed</span>
+          <span v-if="c.locked" class="clip__lock glass-dark"><AppIcon name="lock" :size="16" /> Plan needed</span>
         </div>
         <div class="clip__body">
-          <p class="clip__meta">Clip {{ i + 1 }} · {{ lightingLabel[c.lighting] }}{{ c.hazardCount > 1 ? ` · ${c.hazardCount} hazards` : '' }}</p>
+          <p class="clip__meta">Clip {{ i + 1 }}{{ c.lighting ? ` · ${lightingLabel[c.lighting]}` : ' · Real footage' }}{{ c.hazardCount > 1 ? ` · ${c.hazardCount} hazards` : '' }}</p>
           <h2>{{ c.title }}</h2>
           <p class="clip__desc">{{ c.description }}</p>
           <div class="clip__score">
@@ -56,6 +58,10 @@ const lightingLabel = { day: 'Daytime', dusk: 'Dusk', night: 'Night' } as const
 .clip__play :deep(path) { fill: #fff; stroke: none; }
 .clip:hover .clip__play { transform: scale(1.12); }
 .clip__dur { position: absolute; right: 10px; bottom: 10px; padding: 3px 8px; border-radius: 8px; font-size: 0.75rem; color: #fff; }
+/* filmed clip: no animated preview — a calm road-at-dusk card instead */
+.clip__filmed { position: absolute; inset: 0; background: linear-gradient(180deg, #34476a 0%, #8d8aa0 55%, #5d646f 56%, #3e434b 100%); }
+.clip__filmed::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 40%; height: 44%; transform: translateX(-50%); background: linear-gradient(90deg, transparent 47%, #f3eee2 47% 53%, transparent 53%) top / 100% 30% repeat-y; clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%); opacity: 0.7; }
+.clip__tag { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 980px; font-size: 0.75rem; color: #fff; }
 .clip__lock { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 980px; font-size: 0.75rem; color: #fff; }
 .clip__body { display: grid; gap: 6px; padding: 18px 20px 20px; }
 .clip__meta { font-size: 0.8125rem; color: var(--muted); }

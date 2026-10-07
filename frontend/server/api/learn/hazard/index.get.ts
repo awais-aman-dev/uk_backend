@@ -13,20 +13,40 @@ export default defineEventHandler(async (event) => {
       .groupBy(schema.hazardAttempts.clipId)
   ])
   const by = new Map(best.map((b) => [b.clipId, b]))
+  // Filmed clips from the Django backend come first; Django keeps their scores (see server/utils/django-hazard.ts)
+  const filmed = access ? await djangoHazardClips(event) : []
   return {
-    clips: clips.map((c) => ({
-      slug: c.slug,
-      title: c.title,
-      description: c.description,
-      durationMs: c.scene.durationMs,
-      lighting: c.scene.lighting,
-      hazardCount: c.hazards.length,
-      maxScore: c.hazards.length * 5,
-      best: by.has(c.id) ? Number(by.get(c.id)!.best) : null,
-      tries: by.get(c.id)?.tries ?? 0,
-      // Scene for the card preview (no hazard windows) — paid content, so only with an active plan
-      scene: access ? c.scene : null
-    })),
+    clips: [
+      ...filmed.map((c) => ({
+        slug: c.slug,
+        title: c.title,
+        description: c.description,
+        durationMs: c.durationMs,
+        lighting: null,
+        hazardCount: c.hazardCount,
+        maxScore: c.hazardCount * 5,
+        best: null,
+        tries: 0,
+        scene: null,
+        video: true,
+        locked: false
+      })),
+      ...clips.map((c) => ({
+        slug: c.slug,
+        title: c.title,
+        description: c.description,
+        durationMs: c.scene.durationMs,
+        lighting: c.scene.lighting,
+        hazardCount: c.hazards.length,
+        maxScore: c.hazards.length * 5,
+        best: by.has(c.id) ? Number(by.get(c.id)!.best) : null,
+        tries: by.get(c.id)?.tries ?? 0,
+        // Scene for the card preview (no hazard windows) — paid content, so only with an active plan
+        scene: access ? c.scene : null,
+        video: false,
+        locked: !access
+      }))
+    ],
     signs: access ? await signsForScenes(clips.map((c) => c.scene)) : {}
   }
 })
