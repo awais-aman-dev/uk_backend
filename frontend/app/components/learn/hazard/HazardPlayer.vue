@@ -323,7 +323,8 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
 .chip-enter-from, .chip-leave-to { opacity: 0; transform: translate(-50%, -10px); }
 
 .hp__bar { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: #0b0b0d; border-top: 1px solid rgb(255 255 255 / 0.08); }
-.hp__progress { position: absolute; left: 0; right: 0; height: 3px; margin-top: -10px; background: rgb(255 255 255 / 0.1); }
+/* the progress line runs along the top edge of the bar (between the picture and the hint), never through the text */
+.hp__progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: rgb(255 255 255 / 0.1); }
 .hp__progress i { display: block; height: 100%; background: #2997ff; }
 .hp__bar { position: relative; }
 .hp__flags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 28px; }
@@ -353,7 +354,7 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
 .hp--demo .hp__card h2 { font-size: clamp(1.25rem, 3vw, 1.6rem); color: #fff; }
 .hp--demo .hp__card > p { font-size: 0.9375rem; line-height: 1.4; }
 .hp--demo .hp__score strong { font-size: 3.25rem; }
-.hp--demo .hp__bar { min-height: 48px; }
+.hp--demo .hp__bar { min-height: 56px; padding-top: 14px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 .hp--demo .hp__count { font-size: 6rem; }
 @media (max-width: 559px) {
   .hp--demo .hp__card { padding: 14px 16px; gap: 8px; }
