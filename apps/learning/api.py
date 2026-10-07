@@ -23,10 +23,19 @@ from rest_framework.views import APIView
 from apps.accounts.models import User
 from apps.entitlements import services as entitlements
 from apps.learning import services
-from apps.learning.models import Chapter, ExamKind, PracticeExam, Question, Sign, Subchapter
+from apps.learning.models import (
+    Chapter,
+    ExamKind,
+    PracticeExam,
+    Question,
+    SavedQuestion,
+    Sign,
+    Subchapter,
+)
 from apps.learning.serializers import (
     AnswerRequestSerializer,
     AnswerResponseSerializer,
+    DoneResponseSerializer,
     EbookChapterResponseSerializer,
     EbookListResponseSerializer,
     ExamDetailResponseSerializer,
@@ -35,6 +44,8 @@ from apps.learning.serializers import (
     ExamSubmissionSerializer,
     LessonDetailResponseSerializer,
     PracticeSetResponseSerializer,
+    ProgressSummaryResponseSerializer,
+    SavedResponseSerializer,
     SignListResponseSerializer,
     TopicListResponseSerializer,
 )
@@ -85,6 +96,7 @@ class TopicListView(APIView):
         if entitlements.has_access(student):
             chapters = entitlements.visible_chapters(student, chapters)
 
+        done = services.completed_lesson_ids(student)
         topics = []
         for chapter in chapters:
             subchapters = services.live_subchapters_of(chapter).order_by("order", "title")
@@ -97,17 +109,14 @@ class TopicListView(APIView):
                     "title": chapter.title,
                     "description": chapter.description,
                     "icon": chapter.icon,
-                    # Progress is not recorded yet, so these are honest zeroes rather than
-                    # missing keys the frontend would have to guard against.
-                    "mastery": 0,
-                    "questions": 0,
+                    **services.mastery_of(student, chapter),
                     "lessons": [
                         {
                             "slug": subchapter.slug,
                             "title": subchapter.title,
                             "summary": subchapter.summary,
                             "minutes": subchapter.minutes,
-                            "done": False,
+                            "done": subchapter.pk in done,
                         }
                         for subchapter in subchapters
                     ],
@@ -159,7 +168,7 @@ class LessonDetailView(APIView):
                     "title": subchapter.chapter.title,
                     "icon": subchapter.chapter.icon,
                 },
-                "done": False,
+                "done": subchapter.pk in services.completed_lesson_ids(student),
                 "prev": _link(neighbours, position, -1),
                 "next": _link(neighbours, position, 1),
                 "signs": {},
@@ -209,20 +218,27 @@ class EbookView(APIView):
             "order", "title"
         )
 
+        read = services.completed_lesson_ids(student)
+        chapters = [
+            {
+                "slug": section.slug,
+                "title": section.title,
+                "summary": section.summary,
+                "number": number,
+                "read": section.pk in read,
+            }
+            for number, section in enumerate(sections, start=1)
+        ]
+
         return Response(
             {
-                "chapters": [
-                    {
-                        "slug": section.slug,
-                        "title": section.title,
-                        "summary": section.summary,
-                        "number": number,
-                        "read": False,
-                    }
-                    for number, section in enumerate(sections, start=1)
-                ],
-                # Where the student left off, once reading progress is recorded.
-                "current": None,
+                "chapters": chapters,
+                # The first section not yet read, which is where "continue reading" goes. The
+                # last section once the book is finished, so the button always has a target.
+                "current": next(
+                    (item["slug"] for item in chapters if not item["read"]),
+                    chapters[-1]["slug"] if chapters else None,
+                ),
             }
         )
 
@@ -329,15 +345,24 @@ class PracticeSetView(APIView):
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
             questions = questions.filter(chapter__slug=topic)
 
-        # The modes that depend on what a student has done before — mistakes, weak, saved,
-        # review — need the progress that is not recorded yet, so they practise everything.
+        if mode == "mistakes":
+            questions = questions.filter(pk__in=services.question_ids_answered_wrong(student))
+        elif mode == "saved":
+            questions = questions.filter(saved_by__student=student)
+        elif mode == "weak":
+            questions = questions.exclude(pk__in=services.question_ids_already_learnt(student))
+        elif mode == "review":
+            # Everything already attempted, right or wrong. A subquery rather than a join: a
+            # join returns one row per attempt, and the random ordering defeats .distinct().
+            questions = questions.filter(pk__in=services.question_ids_attempted(student))
+
         chosen = list(questions.order_by("?")[:count])
 
         return Response(
             {
                 "questions": [services.student_view_of_question(question) for question in chosen],
                 "signs": sign_map(_sign_codes_in(chosen)),
-                "saved": [],
+                "saved": services.saved_question_keys(student),
             }
         )
 
@@ -390,7 +415,9 @@ class AnswerView(APIView):
             return Response({"detail": "selected must be a list of option ids."}, status=400)
 
         # Marked on the server: the answer was never in the page for the student to read.
-        return Response(services.mark_answer(question, [str(option) for option in selected]))
+        marked = services.mark_answer(question, [str(option) for option in selected])
+        services.record_answer(student, question, marked["correct"])
+        return Response(marked)
 
 
 def _exam_summary(exam: PracticeExam, question_count: int) -> dict:
@@ -512,4 +539,87 @@ class ExamSubmitView(APIView):
 
         # Marked on the server against every question the exam asks, so a sitting cannot be
         # passed by sending back fewer answers than there were questions.
-        return Response(services.mark_exam(exam, submission.validated_data["answers"]))
+        result = services.mark_exam(exam, submission.validated_data["answers"])
+        services.record_sitting(student, exam, result)
+        return Response(result)
+
+
+class LessonCompleteView(APIView):
+    """Mark a lesson as finished.
+
+    An explicit call rather than guessed from the lesson being fetched, because opening a page is
+    not reading it — and the student pressing the button is the only thing that actually says so.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="completeLesson",
+        summary="Mark a lesson as finished",
+        request=None,
+        responses={200: DoneResponseSerializer},
+    )
+    def post(self, request: Request, slug: str) -> Response:
+        student = cast(User, request.user)
+        subchapter = services.live(Subchapter.objects.select_related("chapter")).filter(slug=slug).first()
+        if subchapter is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not entitlements.can_view(student, subchapter):
+            return plan_needed()
+
+        services.mark_lesson_done(student, subchapter)
+        return Response({"done": True})
+
+
+class SavedQuestionView(APIView):
+    """Put a question aside to come back to, or take it off the list."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="saveQuestion", summary="Save a question", request=None, responses={200: SavedResponseSerializer}
+    )
+    def post(self, request: Request, key: str) -> Response:
+        student, question = self._find(request, key)
+        if question is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        SavedQuestion.objects.get_or_create(student=student, question=question)
+        return Response({"saved": True})
+
+    @extend_schema(
+        operation_id="unsaveQuestion", summary="Unsave a question", responses={200: SavedResponseSerializer}
+    )
+    def delete(self, request: Request, key: str) -> Response:
+        student, question = self._find(request, key)
+        if question is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        SavedQuestion.objects.filter(student=student, question=question).delete()
+        return Response({"saved": False})
+
+    def _find(self, request: Request, key: str) -> tuple:
+        """The question, if this student is allowed it. Addressed by key, as content refers to it."""
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return student, None
+
+        question = services.live(Question.objects.all()).filter(key=key).first()
+        if question is None or not entitlements.can_view(student, question):
+            return student, None
+        return student, question
+
+
+class ProgressView(APIView):
+    """How the student is getting on, for the Today screen."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="getProgress",
+        summary="Your progress so far",
+        responses={200: ProgressSummaryResponseSerializer},
+    )
+    def get(self, request: Request) -> Response:
+        return Response(services.progress_summary(cast(User, request.user)))

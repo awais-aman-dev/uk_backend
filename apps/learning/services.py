@@ -22,9 +22,13 @@ from apps.learning.models import (
     Chapter,
     ContentType,
     LearningContent,
+    LessonProgress,
+    MockAttempt,
     PracticeExam,
     Question,
+    QuestionAttempt,
     QuestionType,
+    SavedQuestion,
     Subchapter,
 )
 from apps.staff.authz import require_permission
@@ -404,4 +408,155 @@ def mark_answer(question: Question, selected: list[str]) -> dict:
         "lesson": (
             {"slug": question.learn_more.slug, "title": question.learn_more.title} if question.learn_more else None
         ),
+    }
+
+
+# --- Progress ------------------------------------------------------------------------------------
+#
+# Everything here is worked out from the attempt records rather than kept in a counter, so a
+# number shown to a student can never drift away from what they actually did.
+
+
+def record_answer(student, question: Question, was_correct: bool) -> None:
+    """Remember one answer."""
+    QuestionAttempt.objects.create(student=student, question=question, was_correct=was_correct)
+
+
+def record_sitting(student, exam: PracticeExam, result: dict) -> None:
+    """Remember one exam sitting: the score, and every answer that made it up.
+
+    The answers are recorded too, so a question got wrong in a mock turns up under "mistakes"
+    exactly as one got wrong while practising.
+    """
+    MockAttempt.objects.create(
+        student=student,
+        exam=exam,
+        score=result["score"],
+        total=result["total"],
+        passed=result["passed"],
+    )
+    QuestionAttempt.objects.bulk_create(
+        QuestionAttempt(student=student, question_id=answer["id"], was_correct=answer["correct"])
+        for answer in result["questions"]
+    )
+
+
+def mark_lesson_done(student, subchapter: Subchapter) -> None:
+    """Record that a student finished a subchapter. Finishing it twice changes nothing."""
+    LessonProgress.objects.get_or_create(student=student, subchapter=subchapter)
+
+
+def completed_lesson_ids(student) -> set[int]:
+    """Which subchapters this student has finished, for marking up a listing in one query."""
+    return set(LessonProgress.objects.filter(student=student).values_list("subchapter_id", flat=True))
+
+
+def saved_question_keys(student) -> list[str]:
+    return list(SavedQuestion.objects.filter(student=student).values_list("question__key", flat=True))
+
+
+def mastery_of(student, chapter: Chapter) -> dict:
+    """How much of a chapter's question bank the student has got right at least once.
+
+    Counted over questions rather than attempts, so answering the same question ten times does
+    not look like progress, and a question answered right once stays counted even if a later
+    attempt was wrong — this is "have you learnt it", not "how are you doing today".
+    """
+    total = live(Question.objects.filter(chapter=chapter)).count()
+    if not total:
+        return {"mastery": 0, "questions": 0}
+
+    learnt = (
+        QuestionAttempt.objects.filter(student=student, was_correct=True, question__chapter=chapter)
+        .values("question_id")
+        .distinct()
+        .count()
+    )
+    return {"mastery": round(learnt * 100 / total), "questions": total}
+
+
+def study_days(student) -> list:
+    """The distinct dates this student did something, newest first.
+
+    Both answering a question and finishing a lesson count, so a day spent reading is not lost.
+    """
+    answered = QuestionAttempt.objects.filter(student=student).dates("created_at", "day", order="DESC")
+    read = LessonProgress.objects.filter(student=student).dates("completed_at", "day", order="DESC")
+    return sorted(set(answered) | set(read), reverse=True)
+
+
+def streak(student, today=None) -> int:
+    """How many days in a row up to today the student has studied.
+
+    Today not being used yet does not break the streak — it is only broken by a day that has
+    passed with nothing in it — so the number does not drop to zero overnight.
+    """
+    today = today or timezone.localdate()
+    days = study_days(student)
+    if not days:
+        return 0
+
+    first = days[0]
+    if (today - first).days > 1:
+        return 0
+
+    count = 1
+    for earlier in days[1:]:
+        if (first - earlier).days != 1:
+            break
+        count += 1
+        first = earlier
+    return count
+
+
+def question_ids_attempted(student):
+    """Every question this student has attempted, right or wrong, for going back over."""
+    return QuestionAttempt.objects.filter(student=student).values("question_id")
+
+
+def question_ids_already_learnt(student):
+    """Questions this student has answered correctly at least once.
+
+    Practising "weak" areas excludes these, which leaves both the questions got wrong and the
+    ones never seen — so a new student asking for their weak areas gets the whole bank rather
+    than nothing.
+    """
+    return QuestionAttempt.objects.filter(student=student, was_correct=True).values_list("question_id", flat=True)
+
+
+def question_ids_answered_wrong(student):
+    """Questions the student's most recent attempt got wrong, for practising mistakes.
+
+    A question answered right since is left out: it is no longer a mistake to go back over.
+    """
+    wrong = set(
+        QuestionAttempt.objects.filter(student=student, was_correct=False).values_list("question_id", flat=True)
+    )
+    right = set(
+        QuestionAttempt.objects.filter(student=student, was_correct=True).values_list("question_id", flat=True)
+    )
+    return wrong - right
+
+
+def progress_summary(student) -> dict:
+    """The headline numbers for the Today screen."""
+    days = study_days(student)
+    attempts = QuestionAttempt.objects.filter(student=student)
+    answered = attempts.values("question_id").distinct().count()
+    learnt = attempts.filter(was_correct=True).values("question_id").distinct().count()
+    bank = live(Question.objects.all()).count()
+    sittings = MockAttempt.objects.filter(student=student)
+    best = sittings.order_by("-score").first()
+
+    return {
+        "streak": streak(student),
+        "studyDays": len(days),
+        "lastStudiedOn": days[0] if days else None,
+        "questionsAnswered": answered,
+        "questionsLearnt": learnt,
+        "mastery": round(learnt * 100 / bank) if bank else 0,
+        "lessonsCompleted": LessonProgress.objects.filter(student=student).count(),
+        "mockAttempts": sittings.count(),
+        "mocksPassed": sittings.filter(passed=True).count(),
+        "bestMockScore": best.score if best else None,
     }

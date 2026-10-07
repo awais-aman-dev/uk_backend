@@ -22,6 +22,7 @@ Content is addressed by ``slug`` because that is what the API asks for, so a slu
 the public contract once published.
 """
 
+from django.conf import settings
 from django.db import models
 
 from apps.core.models import PublishableModel, TimestampedModel
@@ -319,3 +320,85 @@ class ExamQuestion(models.Model):
 
     def __str__(self) -> str:
         return f"{self.exam.title}: {self.question}"
+
+
+# --- What a student has done ---------------------------------------------------------------------
+#
+# These are records of a person, not of the course, so they are never edited by staff. Each one is
+# written by the endpoint the student was already calling, so the frontend needs no extra request
+# to keep progress up to date. Streaks and mastery are worked out from these rather than stored,
+# so a recount can never disagree with the attempts behind it.
+
+
+class QuestionAttempt(TimestampedModel):
+    """One answer a student gave. Kept per attempt, not per question.
+
+    Keeping every attempt is what makes "questions I got wrong" and "questions I keep getting
+    wrong" answerable later; a single row per question would lose that the moment they retried.
+    """
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="question_attempts")
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="attempts")
+    was_correct = models.BooleanField()
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["student", "question"])]
+
+    def __str__(self) -> str:
+        return f"{self.student} · {self.question.key} · {'right' if self.was_correct else 'wrong'}"
+
+
+class MockAttempt(TimestampedModel):
+    """One sitting of an exam, with the score it earned.
+
+    The score is stored rather than recomputed, because an exam's questions and pass mark can
+    change afterwards and a past result should not move.
+    """
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mock_attempts")
+    exam = models.ForeignKey(PracticeExam, on_delete=models.CASCADE, related_name="attempts")
+    score = models.PositiveSmallIntegerField()
+    total = models.PositiveSmallIntegerField()
+    passed = models.BooleanField()
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["student", "exam"])]
+
+    def __str__(self) -> str:
+        return f"{self.student} · {self.exam.title} · {self.score}/{self.total}"
+
+
+class LessonProgress(models.Model):
+    """That a student has finished a subchapter.
+
+    One model covers both a lesson being completed and an e-book section being read, because the
+    e-book is a chapter of subchapters like any other — so there is nothing to keep in step.
+    """
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lesson_progress")
+    subchapter = models.ForeignKey(Subchapter, on_delete=models.CASCADE, related_name="progress")
+    completed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-completed_at"]
+        constraints = [models.UniqueConstraint(fields=["student", "subchapter"], name="one_progress_row_per_lesson")]
+
+    def __str__(self) -> str:
+        return f"{self.student} · {self.subchapter.title}"
+
+
+class SavedQuestion(models.Model):
+    """A question a student put aside to come back to."""
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_questions")
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="saved_by")
+    saved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-saved_at"]
+        constraints = [models.UniqueConstraint(fields=["student", "question"], name="one_saved_row_per_question")]
+
+    def __str__(self) -> str:
+        return f"{self.student} · {self.question.key}"
