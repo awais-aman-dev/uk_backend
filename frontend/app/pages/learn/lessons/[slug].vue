@@ -4,6 +4,7 @@ definePageMeta({ layout: 'learn', middleware: 'auth' })
 const route = useRoute()
 const toast = useToast()
 const { data, error, refresh } = await useFetch(() => `/api/learn/lessons/${route.params.slug}`)
+useSignedUrlRefresh(refresh) // signed video/document URLs from Django expire after ~1 h
 useHead({ title: () => `${data.value?.lesson.title ?? 'Lesson'} — 1Theory` })
 
 // Reading progress bar

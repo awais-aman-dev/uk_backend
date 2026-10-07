@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { Block, HazardClipDto, HazardResult, QuestionDto, SignDto } from '#shared/types/learn'
 import { isCheating, scoreClick } from '#shared/hazard/motion'
 import { z } from 'zod'

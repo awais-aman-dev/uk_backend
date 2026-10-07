@@ -21,10 +21,7 @@ async function poll() {
   try {
     const res = await $fetch<{ order: Order }>(`/api/checkout/orders/${orderId}` as string)
     order.value = res.order
-    if (res.order.status === 'paid') {
-      toast.show('Payment successful! Your access is active.')
-      return navigateTo('/account', { replace: true })
-    }
+    if (res.order.status === 'paid') return waitForAccess()
     if (res.order.status !== 'pending') return
   } catch (e) {
     failed.value = apiErrorsOf(e).form ?? 'We couldn’t find this order.'
@@ -35,6 +32,24 @@ async function poll() {
   // ~1.5 s at first, then every 4 s, and stop after about 3 minutes (the email confirms it anyway)
   if (tries < 50) timer = setTimeout(poll, tries < 10 ? 1500 : 4000)
 }
+// The backend marks the order paid a moment before it grants the access (that part runs in the background),
+// so don't say "active" until the account really shows it — then go to the account.
+const activating = ref(false)
+async function waitForAccess() {
+  activating.value = true
+  for (let i = 0; i < 60; i++) { // up to ~2 minutes: the backend has been seen granting access a minute after "paid"
+    const acct = await $fetch<{ subscription: { state: string } | null }>('/api/account').catch(() => null)
+    const state = acct?.subscription?.state
+    if (state === 'active' || state === 'ends_soon') {
+      toast.show('Payment successful! Your access is active.')
+      return navigateTo('/account', { replace: true })
+    }
+    await new Promise((r) => (timer = setTimeout(r, 2000)))
+  }
+  // still not there: the account page says it's being activated and keeps checking
+  return navigateTo({ path: '/account', query: { activating: '1' } }, { replace: true })
+}
+
 onMounted(poll)
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
@@ -55,7 +70,7 @@ onBeforeUnmount(() => clearTimeout(timer))
         </template>
         <template v-else>
           <span class="spinner" aria-hidden="true" />
-          <h1>Confirming your payment…</h1>
+          <h1>{{ activating ? 'Payment received — activating your access…' : 'Confirming your payment…' }}</h1>
           <p class="lead">
             <template v-if="order">{{ order.packageName }} · {{ order.days }} days · {{ formatGBP(order.pricePence) }}. </template>
             This usually takes a few seconds.

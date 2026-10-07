@@ -60,6 +60,34 @@ export async function djangoHazardClip(event: H3Event, slug: string): Promise<Ha
   return toVideoClipDto(res.data)
 }
 
+/** A filmed clip as a card in the clip list. Django keeps its scores, so there's no best/tries here. */
+export const filmedCard = (c: HazardVideoClipDto) => ({
+  slug: c.slug,
+  title: c.title,
+  description: c.description,
+  durationMs: c.durationMs,
+  lighting: null,
+  hazardCount: c.hazardCount,
+  maxScore: c.hazardCount * 5,
+  best: null,
+  tries: 0,
+  scene: null,
+  video: true,
+  locked: false
+})
+
+/**
+ * The clip page for one of Django's filmed clips: the clip and its place among the filmed clips.
+ * `after` = slugs listed after the filmed ones (our own clips, when both are shown), so "Next" carries on into them.
+ */
+export async function filmedClipPage(event: H3Event, slug: string, after: string[] = []) {
+  const clip = await djangoHazardClip(event, slug)
+  if (!clip) throw createError({ statusCode: 404, statusMessage: 'Clip not found' })
+  const list = await djangoHazardClips(event)
+  const i = Math.max(0, list.findIndex((c) => c.slug === slug))
+  return { clip, signs: {}, index: i, total: list.length + after.length, next: list[i + 1]?.slug ?? after[0] ?? null }
+}
+
 /** Score an attempt on Django. Clicks are milliseconds into the clip here, seconds there. */
 export async function djangoHazardAttempt(event: H3Event, slug: string, clicksMs: number[]): Promise<HazardResult> {
   const clicks = [...clicksMs].sort((a, b) => a - b)

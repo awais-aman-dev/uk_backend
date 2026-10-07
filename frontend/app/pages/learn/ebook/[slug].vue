@@ -1,7 +1,8 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 const route = useRoute()
-const { data, error } = await useFetch(() => `/api/learn/ebook/${route.params.slug}`)
+const { data, error, refresh } = await useFetch(() => `/api/learn/ebook/${route.params.slug}`)
+useSignedUrlRefresh(refresh) // signed video/document URLs from Django expire after ~1 h
 const { isDjango } = useLearnSource()
 useHead({ title: () => `${data.value?.chapter.title ?? 'Highway Code'} — 1Theory` })
 

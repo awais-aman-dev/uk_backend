@@ -106,7 +106,10 @@ export async function getProfile(event: H3Event) {
   return event.context.auth?.profile ?? null
 }
 
-/** Access status from Django (cached briefly). */
+/**
+ * Access status from Django. Only an *active* plan is cached briefly: "no plan / expired" can turn into access at
+ * any moment (a payment), and the server instance that handled the payment isn't the one serving the next page.
+ */
 export async function getSubscription(event: H3Event): Promise<DjangoSubscription | null> {
   const user = await getSessionUser(event)
   if (!user) return null
@@ -115,7 +118,7 @@ export async function getSubscription(event: H3Event): Promise<DjangoSubscriptio
   if (hit) return hit.value
   const res = await djangoFetch<DjangoSubscription>(event, 'GET', '/api/cabinet/subscription/', { auth: true })
   const value = res.ok ? res.data : null
-  if (res.ok) {
+  if (res.ok && value?.online_platform_activated) {
     subs.set(id, { at: Date.now(), value })
     prune(subs)
   }

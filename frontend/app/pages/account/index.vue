@@ -6,13 +6,36 @@ useHead({ title: 'My account — 1Theory' })
 
 const { logout } = useAuth()
 const toast = useToast()
-const { data } = await useFetch('/api/account')
+const { data, refresh } = await useFetch('/api/account')
+const route = useRoute()
+const router = useRouter()
 const { packages } = await usePackages()
 const checkout = useCheckout()
 
 const sub = computed(() => data.value?.subscription ?? null)
 const hasAccess = computed(() => !!sub.value && sub.value.state !== 'expired')
 const firstName = computed(() => data.value?.profile.firstName)
+
+// Arrived from the payment page before the backend finished granting access (?activating=1):
+// say so and keep checking until the plan shows up (up to 5 minutes)
+const activating = ref(route.query.activating === '1' && !hasAccess.value)
+let activationTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  if (!activating.value) return
+  const started = Date.now()
+  activationTimer = setInterval(async () => {
+    await refresh()
+    if (hasAccess.value) {
+      activating.value = false
+      clearInterval(activationTimer)
+      toast.show('Your access is active. Enjoy!')
+      router.replace('/account')
+    } else if (Date.now() - started > 5 * 60_000) {
+      clearInterval(activationTimer)
+    }
+  }, 5000)
+})
+onBeforeUnmount(() => clearInterval(activationTimer))
 
 const resending = ref(false)
 async function resendVerification() {
@@ -53,6 +76,9 @@ const used = computed(() => {
         </div>
       </header>
 
+      <UiAlert v-if="activating" variant="info">
+        Payment received — we’re activating your access. This page updates by itself; it usually takes a minute or two.
+      </UiAlert>
       <UiAlert v-if="data && !data.profile.emailVerified" variant="info">
         Please confirm your email address — we sent a link to <b>{{ data.profile.email }}</b>.
         <button type="button" class="linklike" :disabled="resending" @click="resendVerification">Send it again</button>

@@ -57,16 +57,35 @@ browser ──(cookies)──▶ Nuxt server (/api/*) ──(Bearer JWT)──�
 | `/auth/reset-password?token=…` | Password reset, and "set your password" after a guest purchase |
 | `/account/email/confirm?token=…` | Email-change confirmation |
 
-## Learning area (temporary)
+## Learning area
 
-Lessons, practice, mock tests, hazard perception, e-book and progress still run on this app's own API
-(`server/api/learn/*`, content seeded from `server/content/*`) until the Django learning API exists — it will
-follow `docs/openapi.yaml`, so the pages switch over without changes. Meanwhile:
+The learning area runs on the Django **Learning API** (`/api/learn/*`, as in the backend's *Learning API —
+Frontend Integration Guide*). Our server (`server/api/learn/*`) proxies it with the learner's JWT and only adapts
+shapes; Django checks answers and scores everything. The switch is automatic
+(`server/utils/django-learn.ts`): as soon as `GET /api/learn/topics/` returns a topic, every learning page uses
+Django — until then the app serves its own material (`server/content/*`), so the area is never empty. A failed
+check (Render waking up) keeps the last answer.
 
-- **access** comes from Django (`cabinet/subscription/` → `online_platform_activated`);
-- **progress** is stored here, in a learner row linked to the Django account (`users.django_id`);
-- **study time** (Progress page) comes from a once-a-minute heartbeat of an open tab, which also keeps the
-  Django session fresh.
+In Django mode the pages show **only what the API offers** (guide flows A–E):
+
+| Page | Django endpoints |
+|---|---|
+| Today, Progress | `topics/` + `progress/` (`null` bests shown as "not yet", never 0) |
+| Lessons, e-book | `lessons/{slug}/`, `ebook/`, `ebook/{slug}/`; finishing → `lessons/{slug}/complete/` (also for e-book sections). Blocks: `html` (sanitised), `check`, `video`, `document` (https only), `hazard`; unknown types are skipped |
+| Practice | `practice/` (modes as the guide defines them), `answer/` (`{questionId, selected}` only), `questions/{key}/saved/` (POST / DELETE) |
+| Exams (`/learn/mock` → `/learn/exams/{slug}`) | `exams/`, `exams/{slug}/`, `exams/{slug}/submit/` — FE timer, answers kept in the browser, one submit, auto-submit at zero |
+| Hazard perception | `hazard/`, `hazard/{slug}/`, `hazard/{slug}/attempt/` — clicks in seconds, warning near `maxClicks`, voided message |
+| Road signs | `signs/` — drawn from `spec`; a shape we can't draw shows the sign's name |
+
+Status handling follows the guide: 401 → one token refresh, then sign-in; 402 → the "unlock" screen; 404 → not
+found, no retry; 429 → back off and retry once. Signed media URLs are never stored; lesson and e-book pages
+re-fetch every 50 minutes while open. Lesson responses come with `signs: {}` (a known issue in the guide), so
+missing signs are filled from `signs/`. Not offered in Django mode: our readiness/plan, spaced repetition,
+search (⌘K) and the e-book PDF.
+
+Other learning data kept here: **access** comes from Django (`cabinet/subscription/`); **study time** comes from
+a once-a-minute heartbeat of an open tab (which also keeps the Django session fresh), stored against the
+Django account (`users.django_id`).
 
 The **contact form** also saves to this database for now — nobody reads it here; it should move to a
 Django endpoint (or email).
@@ -75,7 +94,8 @@ Django endpoint (or email).
 
 - Django unreachable → the landing page still renders; sign-in / pricing show "service unavailable".
   Calls time out after 50 s (a sleeping free Render instance takes up to a minute to wake).
-- Packages are cached for 1 minute, profile / access for 20 s (keyed by the verified access token).
+- Packages are cached for 1 minute, the profile for 20 s (keyed by the verified access token), an *active* plan
+  for 20 s — "no plan / expired" is never cached, so access shows up right after a payment on any server instance.
 - Parallel requests with an expired access token share one refresh; an API call never deletes the cookies
   (a losing race must not sign the user out) — only a page load does, when the session is really gone.
 

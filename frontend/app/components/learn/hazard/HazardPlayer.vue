@@ -318,7 +318,7 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
       <template v-else>
         <div class="hp__progress"><i :style="{ width: pct(t) }" /></div>
         <div class="hp__flags" aria-live="polite">
-          <span v-for="(c, i) in clicks" :key="i" class="hp__flag hp__flag--bar"><AppIcon name="flag" :size="16" /></span>
+          <span v-for="(_, i) in clicks" :key="i" class="hp__flag hp__flag--bar"><AppIcon name="flag" :size="16" /></span>
           <span v-if="!clicks.length" class="hp__hint">{{ phase === 'playing' ? 'Click when you see a hazard developing' : '' }}</span>
           <span v-if="clickWarning" class="hp__warn" :class="{ 'hp__warn--over': (clicksLeft ?? 1) <= 0 }">{{ clickWarning }}</span>
         </div>

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm'
+import { asc } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   // Material from the Django backend once it has some (see server/utils/django-learn.ts)

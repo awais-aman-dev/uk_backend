@@ -5,23 +5,7 @@ export default defineEventHandler(async (event) => {
   // Django mode: Django's clips only (Learning API guide §15)
   if (await useDjangoLearning(event)) {
     const filmed = await djangoLearn<{ clips: DjangoClip[] }>(event, 'GET', '/api/learn/hazard/')
-    return {
-      clips: filmed.clips.map(toVideoClipDto).map((c) => ({
-        slug: c.slug,
-        title: c.title,
-        description: c.description,
-        durationMs: c.durationMs,
-        lighting: null,
-        hazardCount: c.hazardCount,
-        maxScore: c.hazardCount * 5,
-        best: null,
-        tries: 0,
-        scene: null,
-        video: true,
-        locked: false
-      })),
-      signs: {}
-    }
+    return { clips: filmed.clips.map((c) => filmedCard(toVideoClipDto(c))), signs: {} }
   }
   const user = await requireUser(event)
   const db = await useDb()
@@ -39,20 +23,7 @@ export default defineEventHandler(async (event) => {
   const filmed = access ? await djangoHazardClips(event) : []
   return {
     clips: [
-      ...filmed.map((c) => ({
-        slug: c.slug,
-        title: c.title,
-        description: c.description,
-        durationMs: c.durationMs,
-        lighting: null,
-        hazardCount: c.hazardCount,
-        maxScore: c.hazardCount * 5,
-        best: null,
-        tries: 0,
-        scene: null,
-        video: true,
-        locked: false
-      })),
+      ...filmed.map(filmedCard),
       ...clips.map((c) => ({
         slug: c.slug,
         title: c.title,

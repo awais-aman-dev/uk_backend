@@ -4,13 +4,14 @@ import type { Block, DjangoDashboard, DjangoProgress, DjangoTopic } from '#share
 import type { DjangoClip } from './django-hazard'
 
 /*
- * The learning material moves to the Django backend (its /api/learn/* follows docs/openapi.yaml).
- * Until a deployment has it — and has content in it — this app keeps serving its own material, so the
- * learning area is never empty. The switch is automatic: once Django answers /api/learn/topics/ with
- * at least one topic, topics, lessons, the e-book, signs, practice and answer checking come from Django.
+ * The learning area runs on the Django backend's Learning API (/api/learn/*, as described in the backend's
+ * "Learning API — Frontend Integration Guide"). Until Django has content, this app serves its own material so
+ * the area is never empty. The switch is automatic: once /api/learn/topics/ returns at least one topic, every
+ * learning page uses Django and shows only what its API offers.
  */
 
 const CHECK_MS = 5 * 60_000
+const RETRY_AFTER_MS = 1500
 let decided: { at: number; django: boolean } | null = null
 
 /** Whether the learning material should come from Django (checked every few minutes, with the visitor's session). */
@@ -20,9 +21,11 @@ export async function useDjangoLearning(event: H3Event): Promise<boolean> {
   if (!user) return decided?.django ?? false // can't ask without a session; keep the last answer
   try {
     const res = await djangoFetch<{ topics?: unknown[] }>(event, 'GET', '/api/learn/topics/', { auth: true })
-    decided = { at: Date.now(), django: res.ok && (res.data.topics?.length ?? 0) > 0 }
+    // A failed check (Render waking up, a 5xx) keeps the last answer, so the site doesn't flip to our material
+    if (res.ok) decided = { at: Date.now(), django: (res.data.topics?.length ?? 0) > 0 }
+    else decided = { at: Date.now(), django: decided?.django ?? false }
   } catch {
-    decided = { at: Date.now(), django: false }
+    decided = { at: Date.now(), django: decided?.django ?? false }
   }
   return decided.django
 }
@@ -98,14 +101,18 @@ async function fillSigns(event: H3Event, data: Record<string, unknown>) {
 
 /**
  * A learning call answered by Django. Its 402 ("plan needed") and 404 pass through unchanged, so the
- * pages behave exactly as with our own API; lesson and chapter HTML is sanitised on the way.
+ * pages behave exactly as with our own API; lesson blocks are cleaned, clips mapped and missing signs filled.
  *
- * Typed `never` by default on purpose: Django serves the same contract as the local endpoint
- * (docs/openapi.yaml), so a handler written as `if (django) return djangoLearn(…)` keeps the response
- * type of its local branch for the pages.
+ * Typed `never` by default on purpose: where Django serves the same shape as our local endpoint, a handler
+ * written as `if (django) return djangoLearn(…)` keeps the response type of its local branch for the pages.
  */
 export async function djangoLearn<T = never>(event: H3Event, method: string, path: string, body?: unknown): Promise<T> {
-  const res = await djangoFetch<T>(event, method, path, { auth: true, body })
+  let res = await djangoFetch<T>(event, method, path, { auth: true, body })
+  // 429: back off and retry once (guide §18); a 429 means Django didn't process the request
+  if (res.status === 429) {
+    await new Promise((r) => setTimeout(r, RETRY_AFTER_MS))
+    res = await djangoFetch<T>(event, method, path, { auth: true, body })
+  }
   if (res.status === 402) throw createError({ statusCode: 402, statusMessage: 'An active plan is needed for this' })
   if (res.status === 404) throw createError({ statusCode: 404, statusMessage: 'Not found' })
   if (res.status === 401) throw createError({ statusCode: 401, statusMessage: 'Please log in' })
