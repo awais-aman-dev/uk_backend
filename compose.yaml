@@ -33,6 +33,12 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/uk_backend
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
+      # Read from .env by compose. Empty means uploads go to the local filesystem.
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-auto}
     ports:
       - "8000:8000"
     # Mount the source code so edits apply without rebuilding the image.

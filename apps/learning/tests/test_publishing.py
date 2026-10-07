@@ -98,14 +98,15 @@ class TestChecksBeforePublishing:
             services.publish(actor=publisher, instance=chapter)
 
     def test_a_kind_of_material_we_cannot_serve_yet_is_refused(self, publisher, subchapter):
-        """The hierarchy knows about video; the product cannot serve it until that work lands."""
+        """The hierarchy knows about hazard clips; the product cannot serve one until that work
+        lands, and publishing it would leave students an item that does nothing."""
         subchapter.status = PublishStatus.PUBLISHED
         subchapter.save(update_fields=["status"])
         video = LearningContent.objects.create(
             subchapter=subchapter,
-            slug="a-video",
-            title="A video",
-            content_type=ContentType.VIDEO,
+            slug="a-clip",
+            title="A clip",
+            content_type=ContentType.HAZARD,
             body_html=CONTENT,
         )
 

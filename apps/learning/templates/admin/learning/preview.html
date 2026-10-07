@@ -68,7 +68,14 @@
                     {% if block.title and content.blocks|length > 1 %}
                         <h2 class="adm-preview__block-title">{{ block.title }}</h2>
                     {% endif %}
-                    <div class="adm-preview__body">{{ block.html|safe }}</div>
+                    {% if block.type == "video" %}
+                        {# Played from the bucket by the same signed URL a student would get. #}
+                        <video class="adm-preview__video" controls preload="metadata" src="{{ block.url }}"></video>
+                    {% elif block.type == "document" %}
+                        <p><a class="adm-btn" href="{{ block.url }}" target="_blank">Open the document</a></p>
+                    {% else %}
+                        <div class="adm-preview__body">{{ block.html|safe }}</div>
+                    {% endif %}
                 {% empty %}
                     <p class="adm-preview__placeholder">Nothing is published in here yet.</p>
                 {% endfor %}

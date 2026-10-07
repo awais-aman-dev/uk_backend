@@ -12,6 +12,7 @@ CONTENT_MODELS = (
     "subchapter",
     "learningcontent",
     "sign",
+    "mediaasset",
     "question",
     "questionoption",
     "practiceexam",

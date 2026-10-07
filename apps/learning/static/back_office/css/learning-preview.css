@@ -80,6 +80,13 @@
     text-decoration: none;
 }
 
+.adm-preview__video {
+    width: 100%;
+    margin: 18px 0;
+    border-radius: 6px;
+    background: #000;
+}
+
 /* A question's answers, with the right one marked — a staff page only. */
 .adm-preview__answers {
     margin: 18px 0;

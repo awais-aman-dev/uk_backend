@@ -108,9 +108,29 @@ class CheckBlockSerializer(serializers.Serializer):
     )
 
 
+class MediaBlockSerializer(serializers.Serializer):
+    """A video to watch or a document to read.
+
+    The URL is signed and expires, so it is fetched with the lesson and used straight away rather
+    than stored or shared.
+    """
+
+    type = serializers.ChoiceField(choices=[("video", "video"), ("document", "document")])
+    title = serializers.CharField()
+    url = serializers.URLField(help_text="A short-lived signed URL. Do not cache it.")
+    durationSeconds = serializers.IntegerField(  # noqa: N815
+        allow_null=True, help_text="For video, when it is known."
+    )
+
+
 CONTENT_BLOCK = PolymorphicProxySerializer(
     component_name="ContentBlock",
-    serializers={"html": HtmlBlockSerializer, "check": CheckBlockSerializer},
+    serializers={
+        "html": HtmlBlockSerializer,
+        "check": CheckBlockSerializer,
+        "video": MediaBlockSerializer,
+        "document": MediaBlockSerializer,
+    },
     resource_type_field_name="type",
 )
 

@@ -209,13 +209,50 @@ GOOGLE_CLIENT_IDS: list[str] = env.list("GOOGLE_CLIENT_IDS", default=[])
 STATIC_URL = "/api/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STORAGES = {
+STORAGES: dict[str, dict] = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     # WhiteNoise serves static files from the app itself and stores a gzipped copy of each file
     # next to it during `collectstatic`. The same backend is used in every environment, so the
     # files collected when the Docker image is built are exactly what a deployed container serves.
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
+
+# --- Uploaded files ------------------------------------------------------------------------------
+#
+# Videos, documents and images staff upload go to an S3-compatible bucket rather than the disk,
+# because the web container's filesystem does not survive a deploy. The settings are the generic
+# S3 ones, so the same code runs against Cloudflare R2 today and AWS S3 later by changing the
+# endpoint; R2 has no regions, hence `auto`.
+#
+# Without a bucket configured, uploads fall back to the local filesystem. That keeps the test
+# suite and a fresh checkout working with no credentials and no network.
+
+S3_BUCKET_NAME = env.str("S3_BUCKET_NAME", default="")
+S3_ENDPOINT_URL = env.str("S3_ENDPOINT_URL", default="")
+MEDIA_URL = "/api/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+if S3_BUCKET_NAME:
+    STORAGES["default"] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": S3_BUCKET_NAME,
+            "endpoint_url": S3_ENDPOINT_URL,
+            "access_key": env.str("S3_ACCESS_KEY_ID"),
+            "secret_key": env.str("S3_SECRET_ACCESS_KEY"),
+            "region_name": env.str("S3_REGION", default="auto"),
+            # Every URL is signed and short-lived, so the bucket stays private and a link that
+            # leaks stops working. The backend checks entitlements before it signs one.
+            "querystring_auth": True,
+            "querystring_expire": env.int("S3_URL_EXPIRY_SECONDS", default=3600),
+            # Uploads are never world-readable, whatever the bucket's own default is.
+            "default_acl": "private",
+            # Refuse to overwrite: two files of the same name are two files.
+            "file_overwrite": False,
+            # R2 does not support these, and sending them fails the upload.
+            "object_parameters": {},
+        },
+    }
 
 # --- URLs ----------------------------------------------------------------------------------------
 
@@ -268,6 +305,10 @@ CKEDITOR_5_CONFIGS = {
             ]
         },
         "table": {"contentToolbar": ["tableColumn", "tableRow", "mergeTableCells"]},
+        # No image button yet, deliberately. The editor stores whatever URL its upload returns,
+        # and a bucket URL is signed and expires within the hour — so every picture in a lesson
+        # would break shortly after it was written. Images are in the media library, and serving
+        # them inline needs a stable URL that signs on demand; see the branch notes.
         "language": "en-gb",
     },
 }

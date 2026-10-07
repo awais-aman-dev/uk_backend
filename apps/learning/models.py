@@ -98,7 +98,12 @@ class ContentType(models.TextChoices):
 
 # The kinds staff can create today. The rest are part of the shape, not yet of the product, and
 # publishing one is refused rather than quietly serving an empty item.
-AVAILABLE_CONTENT_TYPES = (ContentType.THEORY, ContentType.QUESTION)
+AVAILABLE_CONTENT_TYPES = (
+    ContentType.THEORY,
+    ContentType.QUESTION,
+    ContentType.VIDEO,
+    ContentType.DOCUMENT,
+)
 
 
 class LearningContent(PublishableModel, TimestampedModel):
@@ -114,6 +119,14 @@ class LearningContent(PublishableModel, TimestampedModel):
     slug = models.SlugField(unique=True)
     title = models.CharField(max_length=160)
     body_html = models.TextField("content", blank=True, help_text="Used by theory material.")
+    media = models.ForeignKey(
+        "learning.MediaAsset",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="used_in",
+        help_text="Used by video and document material: which file to show.",
+    )
     question = models.ForeignKey(
         "learning.Question",
         on_delete=models.PROTECT,
@@ -146,6 +159,59 @@ class LearningContent(PublishableModel, TimestampedModel):
         # Cleaned here rather than in the form, so content written by an import or the shell is
         # as safe as content typed by staff.
         self.body_html = html.clean(self.body_html)
+        super().save(*args, **kwargs)
+
+
+class MediaKind(models.TextChoices):
+    VIDEO = "video", "Video"
+    DOCUMENT = "document", "Document"
+    IMAGE = "image", "Image"
+
+
+def media_path(instance, filename: str) -> str:
+    """Where an upload is stored: a folder per kind, the name it was given kept.
+
+    The storage backend refuses to overwrite, so two uploads with the same name become two
+    objects rather than one replacing the other.
+    """
+    return f"learning/{instance.kind}/{filename}"
+
+
+class MediaAsset(TimestampedModel):
+    """A file staff uploaded — a video, a document, an image.
+
+    A library rather than a place in the course, like signs: content refers to an asset, so the
+    same video can be used in two lessons without being uploaded twice.
+
+    The file itself lives in a private bucket and is served by a short-lived signed URL that the
+    API issues only once it has checked the student may see the content referring to it. That is
+    why nothing here is a public URL: a link that escaped would otherwise be permanent.
+    """
+
+    title = models.CharField(max_length=160, help_text="How staff find this again.")
+    kind = models.CharField(max_length=10, choices=MediaKind.choices)
+    file = models.FileField(upload_to=media_path)
+    # Recorded at upload because asking the bucket costs a request, and these are shown in a list.
+    size_bytes = models.PositiveBigIntegerField(default=0, editable=False)
+    content_type = models.CharField(max_length=100, blank=True, editable=False)
+    duration_seconds = models.PositiveIntegerField(
+        null=True, blank=True, help_text="For video. Shown to students before they play it."
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="uploads"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.title
+
+    def save(self, *args, **kwargs):
+        # Taken from the upload itself rather than trusted from a form field.
+        if self.file:
+            self.size_bytes = getattr(self.file, "size", 0) or 0
+            self.content_type = getattr(getattr(self.file, "file", None), "content_type", "") or self.content_type
         super().save(*args, **kwargs)
 
 

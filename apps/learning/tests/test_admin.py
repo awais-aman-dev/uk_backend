@@ -131,11 +131,11 @@ class TestRichTextEditor:
         assert content.body_html == "<p>Fine</p>"
 
     def test_only_the_kinds_of_material_we_can_serve_are_offered(self, editor_client, content):
-        """Video and the rest are in the model for later; offering them would create dead items."""
+        """Hazard is in the model for later; offering it would create dead items."""
         page = editor_client.get(change_url(content)).content.decode()
 
         assert 'value="theory"' in page
-        assert 'value="video"' not in page
+        assert 'value="hazard"' not in page
 
 
 class TestAccess:
