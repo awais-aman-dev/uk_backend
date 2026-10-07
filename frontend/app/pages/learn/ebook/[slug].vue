@@ -2,6 +2,7 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 const route = useRoute()
 const { data, error } = await useFetch(() => `/api/learn/ebook/${route.params.slug}`)
+const { isDjango } = useLearnSource()
 useHead({ title: () => `${data.value?.chapter.title ?? 'Highway Code'} — 1Theory` })
 
 // Mark as read when the reader reaches the end of the chapter
@@ -30,7 +31,7 @@ const tocOpen = ref(false)
             <NuxtLink :to="`/learn/ebook/${c.slug}`" :class="{ on: c.slug === data.chapter.slug }" @click="tocOpen = false"><span>{{ c.number }}</span>{{ c.title }}</NuxtLink>
           </li>
         </ol>
-        <a href="/api/learn/ebook.pdf" class="btn btn--ghost btn--sm" download><AppIcon name="download" :size="16" /> PDF</a>
+        <a v-if="!isDjango" href="/api/learn/ebook.pdf" class="btn btn--ghost btn--sm" download><AppIcon name="download" :size="16" /> PDF</a>
       </aside>
 
       <article class="chapter">

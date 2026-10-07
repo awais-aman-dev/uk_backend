@@ -24,10 +24,15 @@ const ink = computed(() => (props.spec.fill === '#fff' ? '#1d1d1f' : '#fff'))
 const symbol = computed(() => SIGN_SYMBOLS[props.spec.symbol] ?? '')
 const isText = computed(() => props.spec.symbol === 'text' || props.spec.symbol === 'P' || props.spec.symbol === 'H')
 const text = computed(() => (props.spec.symbol === 'P' || props.spec.symbol === 'H' ? props.spec.symbol : props.spec.text ?? ''))
+
+// Django's sign `spec` is open-ended (Learning API guide §7): a shape we can't draw falls back to the sign's name
+const drawable = computed(() => ['triangle', 'inverted-triangle', 'octagon', 'rect', 'square', 'circle'].includes(props.spec?.shape))
 </script>
 
 <template>
+  <span v-if="!drawable" class="sign-name" :style="size ? { width: `${size}px` } : undefined" role="img" :aria-label="label">{{ label || 'Road sign' }}</span>
   <svg
+    v-else
     class="sign"
     :class="{ 'sign--fluid': !size }"
     :viewBox="geometry.viewBox"
@@ -90,4 +95,5 @@ const text = computed(() => (props.spec.symbol === 'P' || props.spec.symbol === 
 <style scoped>
 .sign { display: block; height: auto; overflow: visible; }
 .sign--fluid { width: 100%; }
+.sign-name { display: inline-grid; place-items: center; min-height: 3em; padding: 8px 10px; border-radius: 10px; border: 2px solid currentColor; font-size: 0.8125rem; font-weight: 600; text-align: center; line-height: 1.2; }
 </style>

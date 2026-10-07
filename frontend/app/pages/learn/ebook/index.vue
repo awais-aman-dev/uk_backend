@@ -2,6 +2,7 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Highway Code — 1Theory' })
 const { data } = await useFetch('/api/learn/ebook')
+const { isDjango } = useLearnSource()
 const read = computed(() => data.value?.chapters.filter((c) => c.read).length ?? 0)
 const resume = computed(() => data.value?.chapters.find((c) => c.slug === data.value?.current) ?? data.value?.chapters[0])
 </script>
@@ -19,10 +20,10 @@ const resume = computed(() => data.value?.chapters.find((c) => c.slug === data.v
       <div class="book__info">
         <p class="book__meta">{{ data.chapters.length ? `${data.chapters.length} chapters · ${read} read` : "Chapters are on their way — check back soon." }}</p>
         <div v-if="data.chapters.length" class="book__bar"><i :style="{ width: `${(read / data.chapters.length) * 100}%` }" /></div>
-        <p>Every rule you need for the theory test, rewritten so it actually makes sense. Read it here — we remember where you got to — or download it to read offline.</p>
+        <p>Every rule you need for the theory test, rewritten so it actually makes sense. Read it here — we remember where you got to<template v-if="!isDjango"> — or download it to read offline</template>.</p>
         <div class="book__actions">
           <NuxtLink v-if="resume" :to="`/learn/ebook/${resume.slug}`" class="btn btn--primary btn--lg">{{ data.current ? 'Continue reading' : 'Start reading' }}</NuxtLink>
-          <a href="/api/learn/ebook.pdf" class="btn btn--ghost btn--lg" download><AppIcon name="download" :size="18" /> Download PDF</a>
+          <a v-if="!isDjango" href="/api/learn/ebook.pdf" class="btn btn--ghost btn--lg" download><AppIcon name="download" :size="18" /> Download PDF</a>
         </div>
       </div>
     </section>

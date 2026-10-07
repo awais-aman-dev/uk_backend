@@ -4,7 +4,10 @@ useHead({ title: 'Today — 1Theory' })
 
 const user = useAuthUser()
 const toast = useToast()
-const { data, refresh } = await useFetch('/api/learn/overview')
+const { data: raw, refresh } = await useFetch('/api/learn/overview')
+// Django mode: the dashboard is Django's own topics + progress; otherwise our local "Today"
+const dashboard = computed(() => (raw.value?.source === 'django' ? raw.value : null))
+const data = computed(() => (raw.value?.source === 'local' ? raw.value : null))
 
 const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(new Date()))
 const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -40,7 +43,8 @@ const actions = computed(() => [
 </script>
 
 <template>
-  <div v-if="data" class="today">
+  <LearnDjangoDashboard v-if="dashboard" :dashboard="dashboard" :title="`${greeting}, ${firstName}.`" />
+  <div v-else-if="data" class="today">
     <LearnHead :eyebrow="new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' }).format(new Date())" :title="`${greeting}, ${firstName}.`" />
 
     <LearnLocked v-if="!data.hasAccess" title="Your plan has ended" />

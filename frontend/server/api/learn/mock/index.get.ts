@@ -1,6 +1,12 @@
 import { desc, eq, sql } from 'drizzle-orm'
+import type { DjangoExam } from '#shared/types/learn'
 
 export default defineEventHandler(async (event) => {
+  // Django mode: the exams come from Django (Learning API guide §13); our own mock test isn't offered
+  if (await useDjangoLearning(event)) {
+    const { exams } = await djangoLearn<{ exams: DjangoExam[] }>(event, 'GET', '/api/learn/exams/')
+    return { source: 'django' as const, exams }
+  }
   const user = await requireUser(event)
   const db = await useDb()
   const rows = await db
@@ -17,6 +23,7 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(schema.mockAttempts.startedAt))
     .limit(20)
   return {
+    source: 'local' as const,
     pass: MOCK_PASS,
     minutes: MOCK_MINUTES,
     questions: MOCK_QUESTIONS,

@@ -2,7 +2,17 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Mock test — 1Theory' })
 
-const { data } = await useFetch('/api/learn/mock')
+const { data: raw, error: loadError } = await useFetch('/api/learn/mock')
+// Django mode: Django's exams (Learning API guide §13) instead of our own mock test
+const exams = computed(() => (raw.value?.source === 'django' ? raw.value.exams : null))
+const data = computed(() => (raw.value?.source === 'local' ? raw.value : null))
+const groups = computed(() =>
+  [
+    { kind: 'mock', title: 'Mock tests', items: (exams.value ?? []).filter((e) => e.kind === 'mock') },
+    { kind: 'practice', title: 'Practice exams', items: (exams.value ?? []).filter((e) => e.kind === 'practice') }
+  ].filter((g) => g.items.length)
+)
+const timeLabel = (s: number | null) => (s === null ? 'Untimed' : `${Math.round(s / 60)} min`)
 const starting = ref(false)
 const error = ref<string>()
 async function start() {
@@ -23,7 +33,27 @@ const best = computed(() => Math.max(0, ...finished.value.map((a) => a.score ?? 
 </script>
 
 <template>
-  <div v-if="data">
+  <LearnLocked v-if="loadError?.statusCode === 402" />
+  <div v-else-if="exams">
+    <LearnHead eyebrow="Exams" title="The real thing, rehearsed." sub="Answer every question, then submit once — your score and a full review come straight after." />
+    <p v-if="!exams.length" class="empty">No exams are available on your plan yet.</p>
+    <section v-for="g in groups" :key="g.kind" class="exams">
+      <h2>{{ g.title }}</h2>
+      <NuxtLink v-for="e in g.items" :key="e.slug" :to="`/learn/exams/${e.slug}`" class="exam-card">
+        <span class="exam-card__body">
+          <b>{{ e.title }}</b>
+          <small v-if="e.description">{{ e.description }}</small>
+        </span>
+        <span class="exam-card__facts">
+          <span>{{ e.questionCount }} questions</span>
+          <span>Pass {{ e.passMark }}</span>
+          <span>{{ timeLabel(e.timeLimitSeconds) }}</span>
+        </span>
+        <AppIcon name="chevronRight" :size="18" />
+      </NuxtLink>
+    </section>
+  </div>
+  <div v-else-if="data">
     <LearnHead eyebrow="Mock test" title="The real thing, rehearsed." />
 
     <section class="intro">
@@ -61,6 +91,16 @@ const best = computed(() => Math.max(0, ...finished.value.map((a) => a.score ?? 
 </template>
 
 <style scoped>
+.empty { color: var(--muted); }
+.exams { display: grid; gap: 10px; margin-top: 18px; }
+.exams h2 { font-size: 1.375rem; color: var(--ink); }
+.exam-card { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow); color: var(--ink); text-decoration: none; }
+.exam-card:hover { text-decoration: none; background: var(--card-2); }
+.exam-card__body { display: grid; flex: 1; gap: 2px; }
+.exam-card__body b { font-size: 1.125rem; }
+.exam-card__body small { color: var(--muted); }
+.exam-card__facts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.exam-card__facts span { padding: 3px 10px; border-radius: 980px; background: var(--card-2); color: var(--muted); font-size: 0.8125rem; white-space: nowrap; }
 .intro { position: relative; overflow: hidden; display: grid; gap: 18px; padding: 32px; border-radius: var(--radius-xl); background: #000; color: #f5f5f7; isolation: isolate; }
 .intro__glow { position: absolute; z-index: -1; right: -120px; top: -160px; width: 520px; height: 520px; border-radius: 50%; background: radial-gradient(closest-side, rgb(255 159 10 / 0.35), rgb(255 55 95 / 0.15) 60%, transparent); }
 .intro__facts { display: flex; gap: 40px; margin: 0; }

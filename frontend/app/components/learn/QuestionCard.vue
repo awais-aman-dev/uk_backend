@@ -91,7 +91,7 @@ const imageAnswers = computed(() => props.question.options.every((o) => o.sign))
     </header>
 
     <h3 class="qc__prompt">{{ question.prompt }}</h3>
-    <div v-if="question.media?.kind === 'sign' && signs[question.media.code]" class="qc__media">
+    <div v-if="question.media?.code && signs[question.media.code]" class="qc__media">
       <LearnSignGraphic :spec="signs[question.media.code]!.spec" :label="signs[question.media.code]!.name" :size="128" />
     </div>
 

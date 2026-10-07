@@ -12,6 +12,10 @@ export type Block =
   | { type: 'scene'; clip: string; caption?: string } // loops a hazard clip as an illustration
   | { type: 'check'; questions: string[]; title?: string } // question keys
   | { type: 'html'; html: string; title?: string } // theory written in the Django admin (sanitised on our server)
+  // Django lesson blocks (Learning API guide §5.2): media are short-lived signed https URLs
+  | { type: 'video'; url: string; title?: string }
+  | { type: 'document'; url: string; title?: string }
+  | { type: 'hazard'; clips: string[]; title?: string } // clip slugs, looked up in the response's `clips`
 
 export type FigureKey = 'stopping-distances' | 'sign-shapes' | 'two-second-rule' | 'mirror-signal'
 
@@ -161,6 +165,61 @@ export interface HazardVideoClipDto {
 
 export type AnyHazardClip = HazardClipDto | HazardVideoClipDto
 export const isVideoClip = (c: AnyHazardClip): c is HazardVideoClipDto => 'kind' in c && c.kind === 'video'
+
+/** GET /api/learn/progress/ (Learning API guide §12) — `null` means "never happened", not 0. */
+export interface DjangoProgress {
+  streak: number
+  studyDays: number
+  lastStudiedOn: string | null
+  questionsAnswered: number
+  questionsLearnt: number
+  mastery: number
+  lessonsCompleted: number
+  mockAttempts: number
+  mocksPassed: number
+  bestMockScore: number | null
+  hazardAttempts: number
+  bestHazardScore: number | null
+}
+
+/** GET /api/learn/topics/ (guide §5.1) */
+export interface DjangoTopic {
+  slug: string
+  title: string
+  description: string
+  icon: string
+  mastery: number
+  questions: number
+  lessons: { slug: string; title: string; summary: string; minutes: number; done: boolean }[]
+}
+
+/** GET /api/learn/exams/ (guide §13) — `timeLimitSeconds: null` means untimed */
+export interface DjangoExam {
+  slug: string
+  title: string
+  description: string
+  kind: 'mock' | 'practice'
+  questionCount: number
+  passMark: number
+  timeLimitSeconds: number | null
+}
+
+/** POST /api/learn/exams/{slug}/submit/ (guide §14) */
+export interface DjangoExamResult {
+  score: number
+  total: number
+  passMark: number
+  passed: boolean
+  questions: { id: number; key: string; correct: boolean; selected: string[]; correctIds: string[]; explanation: string }[]
+}
+
+/** The learning dashboard in Django mode: exactly the guide's Flow A (topics + progress). */
+export interface DjangoDashboard {
+  source: 'django'
+  hasAccess: boolean
+  topics: DjangoTopic[]
+  progress: DjangoProgress | null
+}
 
 export interface HazardResult {
   score: number

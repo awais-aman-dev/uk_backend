@@ -11,7 +11,8 @@ const inSession = computed(() => !!mode.value)
 
 /* ---------- Chooser ---------- */
 const { data: catalogue } = await useFetch('/api/learn/topics')
-const MODES = [
+const { isDjango } = useLearnSource()
+const LOCAL_MODES = [
   { mode: 'review', icon: 'repeat', title: 'Review', sub: 'Due today — spaced repetition', tone: '#30d158' },
   { mode: 'random', icon: 'sparkle', title: 'Quick 10', sub: 'Random questions from every topic', tone: '#0a84ff' },
   { mode: 'weak', icon: 'target', title: 'Weak spots', sub: 'Focus on your lowest topics', tone: '#ff375f' },
@@ -19,7 +20,22 @@ const MODES = [
   { mode: 'saved', icon: 'bookmark', title: 'Saved', sub: 'Questions you bookmarked', tone: '#5e5ce6' }
 ]
 
-const EMPTY: Record<string, { title: string; text: string }> = {
+// Django mode: the guide's definitions of each mode (Learning API guide §8)
+const DJANGO_MODES = [
+  { mode: 'random', icon: 'sparkle', title: 'Quick 10', sub: 'Any questions in your plan', tone: '#0a84ff' },
+  { mode: 'mistakes', icon: 'replay', title: 'My mistakes', sub: 'Wrong before, not yet answered right since', tone: '#ff9f0a' },
+  { mode: 'weak', icon: 'target', title: 'Weak spots', sub: 'Questions you haven’t got right yet', tone: '#ff375f' },
+  { mode: 'review', icon: 'repeat', title: 'Review', sub: 'Every question you’ve tried before', tone: '#30d158' },
+  { mode: 'saved', icon: 'bookmark', title: 'Saved', sub: 'Questions you bookmarked', tone: '#5e5ce6' }
+]
+const MODES = computed(() => (isDjango.value ? DJANGO_MODES : LOCAL_MODES))
+const DJANGO_EMPTY: Record<string, { title: string; text: string }> = {
+  review: { title: 'Nothing to review yet', text: 'Questions you answer will appear here.' },
+  mistakes: { title: 'No mistakes to fix', text: 'Any question you get wrong will appear here until you get it right.' },
+  weak: { title: 'No weak spots', text: 'You’ve answered every question correctly at least once.' },
+  saved: { title: 'Nothing saved yet', text: 'Tap the bookmark on any question to save it.' }
+}
+const LOCAL_EMPTY: Record<string, { title: string; text: string }> = {
   review: { title: 'Nothing due right now', text: 'Questions you answer come back just before you’d forget them — 1, 3, 7, 14 then 30 days after each right answer.' },
   mistakes: { title: 'No mistakes to review', text: 'Answer a few questions first — any you get wrong will appear here.' },
   saved: { title: 'Nothing saved yet', text: 'Tap the bookmark on any question to save it.' }
@@ -48,7 +64,7 @@ const finished = computed(() => questions.value.length > 0 && results.value.leng
 const score = computed(() => results.value.filter(Boolean).length)
 const title = computed(() => {
   if (route.query.topic) return catalogue.value?.topics.find((t) => t.slug === route.query.topic)?.title ?? 'Topic practice'
-  return MODES.find((m) => m.mode === mode.value)?.title ?? 'Practice'
+  return MODES.value.find((m) => m.mode === mode.value)?.title ?? 'Practice'
 })
 
 function reset() {
@@ -116,8 +132,8 @@ async function again() {
         <LearnLocked v-if="error?.statusCode === 402" />
         <div v-else-if="status === 'success' && !questions.length" class="empty">
           <AppIcon name="check" :size="28" />
-          <h2>{{ EMPTY[mode ?? '']?.title ?? 'No questions here yet' }}</h2>
-          <p>{{ EMPTY[mode ?? '']?.text ?? 'Try another set.' }}</p>
+          <h2>{{ (isDjango ? DJANGO_EMPTY : LOCAL_EMPTY)[mode ?? '']?.title ?? 'No questions here yet' }}</h2>
+          <p>{{ (isDjango ? DJANGO_EMPTY : LOCAL_EMPTY)[mode ?? '']?.text ?? 'Try another set.' }}</p>
           <NuxtLink to="/learn/practice?mode=random" class="btn btn--primary">Quick 10</NuxtLink>
         </div>
         <template v-else-if="questions.length">

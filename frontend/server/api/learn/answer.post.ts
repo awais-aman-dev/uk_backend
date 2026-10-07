@@ -4,7 +4,11 @@ import { z } from 'zod'
 // Practice / lesson checks: the answer is only revealed after the learner commits.
 export default defineEventHandler(async (event) => {
   // Material from the Django backend once it has some (see server/utils/django-learn.ts)
-  if (await useDjangoLearning(event)) return djangoLearn(event, 'POST', '/api/learn/answer/', await readBody(event))
+  if (await useDjangoLearning(event)) {
+    // the guide's body exactly: numeric questionId + selected option ids, nothing else
+    const b = await readValidated(event, z.object({ questionId: z.number().int(), selected: z.array(z.string().max(8)).max(8) }).passthrough())
+    return djangoLearn(event, 'POST', '/api/learn/answer/', { questionId: b.questionId, selected: b.selected })
+  }
   const user = await requireAccess(event)
   const body = await readValidated(
     event,

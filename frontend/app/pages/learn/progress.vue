@@ -2,23 +2,28 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Progress — 1Theory' })
 
-const [{ data }, { data: topics }, { data: mocks }, { data: hazard }] = await Promise.all([
-  useFetch('/api/learn/progress'),
-  useFetch('/api/learn/topics'),
-  useFetch('/api/learn/mock'),
-  useFetch('/api/learn/hazard')
+const { data: raw } = await useFetch('/api/learn/progress')
+// Django mode: Django's progress + topics only (Learning API guide, Flow A); otherwise our local statistics
+const dashboard = computed(() => (raw.value?.source === 'django' ? raw.value : null))
+const data = computed(() => (raw.value?.source === 'local' ? raw.value : null))
+const local = !dashboard.value
+const [{ data: topics }, { data: mocks }, { data: hazard }] = await Promise.all([
+  useFetch('/api/learn/topics', { immediate: local }),
+  useFetch('/api/learn/mock', { immediate: local }),
+  useFetch('/api/learn/hazard', { immediate: local })
 ])
 const level = (n: number) => (n === 0 ? 0 : n < 5 ? 1 : n < 15 ? 2 : n < 30 ? 3 : 4)
 const weeks = computed(() => {
   const cal = data.value?.calendar ?? []
   return Array.from({ length: 12 }, (_, w) => cal.slice(w * 7, w * 7 + 7))
 })
-const finishedMocks = computed(() => (mocks.value?.attempts ?? []).filter((a) => a.status === 'finished').reverse())
+const finishedMocks = computed(() => (mocks.value?.source === 'local' ? mocks.value.attempts : []).filter((a) => a.status === 'finished').reverse())
 const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`)
 </script>
 
 <template>
-  <div v-if="data">
+  <LearnDjangoDashboard v-if="dashboard" :dashboard="dashboard" title="Your progress" variant="progress" />
+  <div v-else-if="data">
     <LearnHead eyebrow="Progress" title="How you’re doing." />
 
     <section class="top">
@@ -67,7 +72,7 @@ const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `$
           <h2>Mock tests</h2>
           <p v-if="!finishedMocks.length" class="muted">No mock tests yet. <NuxtLink to="/learn/mock">Take one</NuxtLink></p>
           <div v-else class="bars">
-            <span class="bars__pass" :style="{ bottom: `${(mocks!.pass / mocks!.questions) * 100}%` }" />
+            <span class="bars__pass" :style="{ bottom: `${mocks?.source === 'local' ? (mocks.pass / mocks.questions) * 100 : 0}%` }" />
             <i v-for="a in finishedMocks.slice(-10)" :key="a.id" :class="{ pass: a.passed }" :style="{ height: `${((a.score ?? 0) / a.total) * 100}%` }" :title="`${a.score}/${a.total}`" />
           </div>
         </section>

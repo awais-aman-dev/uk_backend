@@ -38,6 +38,14 @@ const videoMs = ref(0) // length from the video's metadata, when Django doesn't 
 const videoReady = ref(false)
 const videoFailed = ref(false)
 const canStart = computed(() => !video.value || videoReady.value)
+// A cached video can load before the page hydrates, so its loadedmetadata / canplay events are missed — read its state
+onMounted(() => {
+  const v = videoEl.value
+  if (!v) return
+  if (v.readyState >= 1 && Number.isFinite(v.duration)) videoMs.value = Math.round(v.duration * 1000)
+  if (v.readyState >= 3) videoReady.value = true
+  if (v.error) videoFailed.value = true
+})
 
 const D = computed(() => props.clip.durationMs ?? videoMs.value)
 let raf = 0
@@ -181,6 +189,16 @@ onMounted(() => {
 const activeWindow = computed(() =>
   phase.value === 'review' ? result.value?.windows.find((w) => t.value >= w.startMs - 1200 && t.value <= w.endMs + 600) ?? null : null
 )
+// Filmed clips: more clicks than maxClicks voids the whole attempt — warn in the last few
+const clicksLeft = computed(() => (video.value ? video.value.maxClicks - clicks.value.length : null))
+const clickWarning = computed(() => {
+  const left = clicksLeft.value
+  if (left === null || phase.value !== 'playing' || left > 3) return ''
+  if (left < 0) return 'Too many clicks — this attempt will score zero'
+  if (left === 0) return 'Click limit reached — one more voids this attempt'
+  return `${left} ${left === 1 ? 'click' : 'clicks'} left before this attempt is voided`
+})
+
 const pct = (ms: number) => `${D.value > 0 ? (ms / D.value) * 100 : 0}%`
 const fmt = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
@@ -256,7 +274,7 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
             <template v-if="result">
               <p class="hp__kicker">{{ clip.title }}</p>
               <div class="hp__score"><strong>{{ result.score }}</strong><span>/ {{ result.maxScore }}</span></div>
-              <UiAlert v-if="result.flagged">Too many clicks, or a clicking pattern was detected — this clip scores zero, just like the real test.</UiAlert>
+              <UiAlert v-if="result.flagged">{{ video ? `Attempt voided: more than ${video.maxClicks} clicks. In the real test this clip would score zero — click only when you see a hazard developing.` : 'Too many clicks, or a clicking pattern was detected — this clip scores zero, just like the real test.' }}</UiAlert>
               <ul class="hp__hazards">
                 <li v-for="w in result.windows" :key="w.id">
                   <span class="hp__dots" :aria-label="`${w.score} out of 5`">
@@ -302,6 +320,7 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
         <div class="hp__flags" aria-live="polite">
           <span v-for="(c, i) in clicks" :key="i" class="hp__flag hp__flag--bar"><AppIcon name="flag" :size="16" /></span>
           <span v-if="!clicks.length" class="hp__hint">{{ phase === 'playing' ? 'Click when you see a hazard developing' : '' }}</span>
+          <span v-if="clickWarning" class="hp__warn" :class="{ 'hp__warn--over': (clicksLeft ?? 1) <= 0 }">{{ clickWarning }}</span>
         </div>
       </template>
     </div>
@@ -370,6 +389,8 @@ const bandColors = ['#30d158', '#a8e04a', '#ffd60a', '#ff9f0a', '#ff6b3d']
 @keyframes drop { from { transform: translateY(-14px) scale(0.5); opacity: 0; } }
 .hp__flag :deep(path) { fill: currentColor; }
 .hp__hint { color: var(--muted-dark); font-size: 0.875rem; }
+.hp__warn { margin-left: 6px; padding: 3px 10px; border-radius: 980px; background: rgb(255 179 64 / 0.16); color: #ffb340; font-size: 0.8125rem; font-weight: 600; }
+.hp__warn--over { background: rgb(255 69 58 / 0.18); color: #ff6961; }
 
 .hp__play { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.12); color: #fff; }
 .hp__play :deep(path) { fill: currentColor; }

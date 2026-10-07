@@ -2,7 +2,11 @@ import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   // Material from the Django backend once it has some (see server/utils/django-learn.ts)
-  if (await useDjangoLearning(event)) return { ok: true }
+  if (await useDjangoLearning(event)) {
+    // Django: an e-book section is marked read with the lesson completion endpoint
+    const r = await djangoLearn<{ done: boolean }>(event, 'POST', `/api/learn/lessons/${encodeURIComponent(getRouterParam(event, 'slug')!)}/complete/`)
+    return { ok: r.done }
+  }
   const user = await requireAccess(event)
   const slug = getRouterParam(event, 'slug')!
   const db = await useDb()

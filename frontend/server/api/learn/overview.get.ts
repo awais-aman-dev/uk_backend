@@ -2,6 +2,8 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm'
 
 // Everything the "Today" screen needs in one round trip.
 export default defineEventHandler(async (event) => {
+  // Django mode: the dashboard is exactly what Django's Learning API gives (topics + progress)
+  if (await useDjangoLearning(event)) return djangoDashboard(event)
   const user = await requireUser(event)
   const db = await useDb()
   const access = await hasAccess(event)
@@ -62,6 +64,7 @@ export default defineEventHandler(async (event) => {
     .limit(1)
 
   return {
+    source: 'local' as const,
     hasAccess: access,
     subscription: subscriptionFromDjango(sub),
     readiness: { overall: ready.overall, theory: ready.theory, mock: ready.mock, hazard: ready.hazard },

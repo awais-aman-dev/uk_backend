@@ -7,7 +7,7 @@ import type { HazardResult, HazardVideoClipDto } from '#shared/types/learn'
  * shape our player and review already use.
  */
 
-interface DjangoClip {
+export interface DjangoClip {
   slug: string
   title: string
   description: string
@@ -24,7 +24,7 @@ interface DjangoAttemptResult {
   hazards: { label: string; startsAt: number; endsAt: number; score: number; spotted: boolean }[]
 }
 
-const toDto = (c: DjangoClip): HazardVideoClipDto => ({
+export const toVideoClipDto = (c: DjangoClip): HazardVideoClipDto => ({
   kind: 'video',
   slug: c.slug,
   title: c.title,
@@ -45,7 +45,7 @@ const LIST_WAIT_MS = 5000
 export async function djangoHazardClips(event: H3Event): Promise<HazardVideoClipDto[]> {
   if (!(await getSessionUser(event))) return []
   const fetchList = djangoFetch<{ clips?: DjangoClip[] }>(event, 'GET', '/api/learn/hazard/', { auth: true })
-    .then((res) => (res.ok ? (res.data.clips ?? []).map(toDto) : []))
+    .then((res) => (res.ok ? (res.data.clips ?? []).map(toVideoClipDto) : []))
     .catch(() => [] as HazardVideoClipDto[])
   const giveUp = new Promise<HazardVideoClipDto[]>((resolve) => setTimeout(() => resolve([]), LIST_WAIT_MS))
   return Promise.race([fetchList, giveUp])
@@ -57,7 +57,7 @@ export async function djangoHazardClip(event: H3Event, slug: string): Promise<Ha
   if (res.status === 402) throw createError({ statusCode: 402, statusMessage: 'An active plan is needed for this' })
   if (res.status === 404) return null
   if (!res.ok) throwDjangoError(res)
-  return toDto(res.data)
+  return toVideoClipDto(res.data)
 }
 
 /** Score an attempt on Django. Clicks are milliseconds into the clip here, seconds there. */

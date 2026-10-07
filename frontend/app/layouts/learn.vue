@@ -4,6 +4,7 @@ const theme = useLearnTheme()
 const route = useRoute()
 const user = useAuthUser()
 const searchOpen = useState('learn:search', () => false)
+const { isDjango } = useLearnSource()
 const moreOpen = ref(false)
 watch(() => route.fullPath, () => (moreOpen.value = false))
 
@@ -39,7 +40,7 @@ const initials = computed(() => user.value?.name.split(' ').map((p) => p[0]).sli
 
 onMounted(() => {
   const onKey = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    if (!isDjango.value && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault()
       searchOpen.value = !searchOpen.value
     }
@@ -57,7 +58,7 @@ onMounted(() => {
         <AppLogo />
         <span class="sidebar__tag">Learn</span>
       </div>
-      <button type="button" class="sidebar__search" @click="searchOpen = true">
+      <button v-if="!isDjango" type="button" class="sidebar__search" @click="searchOpen = true">
         <AppIcon name="search" :size="16" /> Search <kbd>⌘K</kbd>
       </button>
       <nav class="sidebar__nav" aria-label="Learning">
@@ -82,7 +83,7 @@ onMounted(() => {
       <!-- Mobile top bar -->
       <header v-if="!focus" class="topbar">
         <AppLogo />
-        <button type="button" class="topbar__btn" aria-label="Search" @click="searchOpen = true">
+        <button v-if="!isDjango" type="button" class="topbar__btn" aria-label="Search" @click="searchOpen = true">
           <AppIcon name="search" :size="20" />
         </button>
         <NuxtLink to="/account" class="avatar" aria-label="My account">{{ initials }}</NuxtLink>
@@ -136,7 +137,7 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <LearnSearch v-model:open="searchOpen" />
+    <LearnSearch v-if="!isDjango" v-model:open="searchOpen" />
     <AppToasts />
   </div>
 </template>

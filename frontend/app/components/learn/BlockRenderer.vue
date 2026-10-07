@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import type { Block, HazardClipDto, QuestionDto, SignDto } from '#shared/types/learn'
+import { isVideoClip, type AnyHazardClip, type Block, type HazardClipDto, type QuestionDto, type SignDto } from '#shared/types/learn'
 
 const props = defineProps<{
   blocks: Block[]
   signs: Record<string, SignDto>
   questions?: Record<string, QuestionDto>
-  clips?: Record<string, HazardClipDto>
+  clips?: Record<string, AnyHazardClip>
 }>()
+// an animated clip (our scene) for a `scene` block; filmed clips come with `hazard` blocks
+const sceneClip = (slug: string) => { const c = props.clips?.[slug]; return c && !isVideoClip(c) ? (c as HazardClipDto) : null }
+const filmed = (slugs: string[]) => slugs.map((s) => props.clips?.[s]).filter((c): c is AnyHazardClip => !!c && isVideoClip(c))
 const emit = defineEmits<{ checked: [correct: boolean] }>()
 const checkQuestions = (keys: string[]) => keys.map((k) => props.questions?.[k]).filter((q): q is QuestionDto => !!q)
 </script>
@@ -50,9 +53,9 @@ const checkQuestions = (keys: string[]) => keys.map((k) => props.questions?.[k])
         <figcaption v-if="b.caption">{{ b.caption }}</figcaption>
       </figure>
 
-      <figure v-else-if="b.type === 'scene' && clips?.[b.clip]" class="fig">
+      <figure v-else-if="b.type === 'scene' && sceneClip(b.clip)" class="fig">
         <div class="scene">
-          <LearnHazardLoop :scene="clips[b.clip]!.scene" :signs="signs" />
+          <LearnHazardLoop :scene="sceneClip(b.clip)!.scene" :signs="signs" />
           <NuxtLink :to="`/learn/hazard/${b.clip}`" class="scene__cta glass-dark">
             <AppIcon name="play" :size="14" /> Try this clip
           </NuxtLink>
@@ -72,12 +75,39 @@ const checkQuestions = (keys: string[]) => keys.map((k) => props.questions?.[k])
         <h2 v-if="b.title" class="blocks__h">{{ b.title }}</h2>
         <div class="html-block__body" v-html="b.html" />
       </section>
+
+      <!-- Django media blocks: signed URLs, used directly and never stored -->
+      <figure v-else-if="b.type === 'video'" class="media">
+        <h2 v-if="b.title" class="blocks__h">{{ b.title }}</h2>
+        <video class="media__video" :src="b.url" controls playsinline preload="metadata" />
+      </figure>
+      <a v-else-if="b.type === 'document'" class="doc" :href="b.url" target="_blank" rel="noopener noreferrer">
+        <AppIcon name="document" :size="22" />
+        <span><b>{{ b.title || 'Open the document' }}</b><small>Opens in a new tab</small></span>
+        <AppIcon name="download" :size="18" />
+      </a>
+      <section v-else-if="b.type === 'hazard' && filmed(b.clips).length" class="hz">
+        <h2 v-if="b.title" class="blocks__h">{{ b.title }}</h2>
+        <NuxtLink v-for="c in filmed(b.clips)" :key="c.slug" :to="`/learn/hazard/${c.slug}`" class="hz__clip">
+          <span class="hz__play"><AppIcon name="play" :size="16" /></span>
+          <span><b>{{ c.title }}</b><small>Hazard perception · {{ c.hazardCount }} {{ c.hazardCount === 1 ? 'hazard' : 'hazards' }}</small></span>
+        </NuxtLink>
+      </section>
     </template>
   </div>
 </template>
 
 <style scoped>
 .blocks { display: grid; gap: 22px; color: var(--ink); font-size: 1.0625rem; line-height: 1.6; }
+.media { display: grid; gap: 10px; margin: 0; }
+.media__video { width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; background: #000; }
+.doc, .hz__clip { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); text-decoration: none; }
+.doc span, .hz__clip > span:last-child { display: grid; flex: 1; line-height: 1.3; }
+.doc small, .hz__clip small { color: var(--muted); font-size: 0.875rem; }
+.doc :deep(.icon) { color: var(--accent); }
+.hz { display: grid; gap: 10px; }
+.hz__play { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #000; color: #fff; }
+.hz__play :deep(path) { fill: currentColor; }
 .blocks :deep(.rich strong) { font-weight: 600; }
 .html-block { display: grid; gap: 12px; }
 .html-block__body :deep(p) { margin: 0 0 0.8em; }

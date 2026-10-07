@@ -3,6 +3,14 @@ import { and, asc, eq } from 'drizzle-orm'
 // The clip for playing. Hazard windows stay on the server until the attempt is scored.
 // Our own (animated) clips first; a slug we don't have is looked up among Django's filmed clips.
 export default defineEventHandler(async (event) => {
+  if (await useDjangoLearning(event)) {
+    const slug = getRouterParam(event, 'slug')!
+    const filmed = await djangoHazardClip(event, slug)
+    if (!filmed) throw createError({ statusCode: 404, statusMessage: 'Clip not found' })
+    const list = await djangoHazardClips(event)
+    const i = Math.max(0, list.findIndex((c) => c.slug === slug))
+    return { clip: filmed, signs: {}, index: i, total: list.length, next: list[i + 1]?.slug ?? null }
+  }
   await requireAccess(event)
   const db = await useDb()
   const all = await db
