@@ -86,27 +86,63 @@ class TestChecksBeforePublishing:
         with pytest.raises(services.NotReadyToPublishError, match="not published"):
             services.publish(actor=publisher, instance=subchapter)
 
-    def test_a_subchapter_with_nothing_published_inside_is_refused(self, publisher, chapter, subchapter):
+    def test_an_empty_subchapter_is_allowed_but_says_it_is_empty(self, publisher, chapter, subchapter):
+        """Material is built top-down, so a subchapter is always empty when it is published."""
         chapter.status = PublishStatus.PUBLISHED
         chapter.save(update_fields=["status"])
 
-        with pytest.raises(services.NotReadyToPublishError, match="Nothing in this subchapter"):
-            services.publish(actor=publisher, instance=subchapter)
+        services.publish(actor=publisher, instance=subchapter)
 
-    def test_a_chapter_with_nothing_published_inside_is_refused(self, publisher, chapter, subchapter):
-        with pytest.raises(services.NotReadyToPublishError, match="No subchapter"):
-            services.publish(actor=publisher, instance=chapter)
+        subchapter.refresh_from_db()
+        assert subchapter.is_published
+        assert "nothing in this subchapter" in services.warnings_about(subchapter)[0].lower()
 
-    def test_a_kind_of_material_we_cannot_serve_yet_is_refused(self, publisher, subchapter):
-        """The hierarchy knows about hazard clips; the product cannot serve one until that work
-        lands, and publishing it would leave students an item that does nothing."""
+    def test_an_empty_chapter_is_allowed_but_says_it_is_empty(self, publisher, chapter):
+        services.publish(actor=publisher, instance=chapter)
+
+        chapter.refresh_from_db()
+        assert chapter.is_published
+        assert "no subchapter" in services.warnings_about(chapter)[0].lower()
+
+    def test_a_whole_branch_can_be_published_from_the_top_down(self, publisher, chapter, subchapter, content):
+        """The order staff actually work in: a chapter, then its sections, then what goes in them.
+
+        Every level used to wait on another — a chapter for a live subchapter, a subchapter for a
+        live chapter — so nothing could be published at all. This is the test that would have
+        caught it.
+        """
+        services.publish(actor=publisher, instance=chapter)
+        services.publish(actor=publisher, instance=subchapter)
+        services.publish(actor=publisher, instance=content)
+
+        for item in (chapter, subchapter, content):
+            item.refresh_from_db()
+            assert item.is_published, f"{item} did not publish"
+
+    def test_a_filled_branch_reports_no_warnings(self, publisher, chapter, subchapter, content):
+        services.publish(actor=publisher, instance=chapter)
+        services.publish(actor=publisher, instance=subchapter)
+        services.publish(actor=publisher, instance=content)
+
+        assert services.warnings_about(chapter) == []
+        assert services.warnings_about(subchapter) == []
+
+    def test_a_kind_of_material_we_cannot_serve_yet_is_refused(self, publisher, subchapter, monkeypatch):
+        """Every kind is servable today, so the guard is exercised by withdrawing one.
+
+        It stays because it is what stops a content type added to the model — the next kind of
+        material someone thinks of — reaching students before the work to serve it exists.
+        """
+        monkeypatch.setattr(
+            "apps.learning.services.AVAILABLE_CONTENT_TYPES", (ContentType.THEORY, ContentType.QUESTION)
+        )
         subchapter.status = PublishStatus.PUBLISHED
         subchapter.save(update_fields=["status"])
         video = LearningContent.objects.create(
             subchapter=subchapter,
             slug="a-clip",
             title="A clip",
-            content_type=ContentType.HAZARD,
+            content_type=ContentType.VIDEO,
             body_html=CONTENT,
         )
 

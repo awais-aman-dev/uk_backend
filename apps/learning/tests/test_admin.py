@@ -130,12 +130,12 @@ class TestRichTextEditor:
         content.refresh_from_db()
         assert content.body_html == "<p>Fine</p>"
 
-    def test_only_the_kinds_of_material_we_can_serve_are_offered(self, editor_client, content):
-        """Hazard is in the model for later; offering it would create dead items."""
+    def test_every_kind_of_material_we_can_serve_is_offered(self, editor_client, content):
+        """All five kinds work now. The form offers exactly what the product can serve."""
         page = editor_client.get(change_url(content)).content.decode()
 
-        assert 'value="theory"' in page
-        assert 'value="hazard"' not in page
+        for kind in ("theory", "question", "video", "document", "hazard"):
+            assert f'value="{kind}"' in page
 
 
 class TestAccess:

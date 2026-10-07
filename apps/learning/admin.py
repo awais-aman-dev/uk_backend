@@ -28,6 +28,9 @@ from apps.learning.models import (
     Chapter,
     ContentType,
     ExamQuestion,
+    HazardAttempt,
+    HazardClip,
+    HazardWindow,
     LearningContent,
     LessonProgress,
     MediaAsset,
@@ -70,6 +73,7 @@ class ContentForm(forms.ModelForm):
             "body_html",
             "question",
             "media",
+            "hazard_clip",
             "order",
             "only_for_packages",
             "publish_from",
@@ -102,10 +106,18 @@ class PublishableAdmin(admin.ModelAdmin):
         if obj.pk is None:
             return placeholder()
         problems = services.problems_with(obj)
-        if not problems:
-            return badge("Ready", "success")
-        listed = format_html_join(mark_safe("<br>"), "&bull; {}", ((problem,) for problem in problems))
-        return format_html("Not yet:<br>{}", listed)
+        warnings = services.warnings_about(obj)
+
+        if problems:
+            listed = format_html_join(mark_safe("<br>"), "&bull; {}", ((problem,) for problem in problems))
+            return format_html("Not yet:<br>{}", listed)
+
+        if warnings:
+            # Publishing is allowed; this is worth knowing rather than worth stopping for.
+            listed = format_html_join(mark_safe("<br>"), "&bull; {}", ((warning,) for warning in warnings))
+            return format_html("{}<br>{}", badge("Ready", "success"), listed)
+
+        return badge("Ready", "success")
 
     def has_publish_permission(self, request: HttpRequest) -> bool:
         return request.user.has_perm(f"{self.opts.app_label}.publish_{self.opts.model_name}")
@@ -139,6 +151,12 @@ class PublishableAdmin(admin.ModelAdmin):
             actions.pop("publish_selected", None)
             actions.pop("unpublish_selected", None)
         return actions
+
+
+def _hazard_sheet(instance) -> dict | None:
+    """The clip and its hazard timings, for a clip or for a content item showing one."""
+    clip = instance if isinstance(instance, HazardClip) else getattr(instance, "hazard_clip", None)
+    return services.hazard_sheet_for(clip) if clip else None
 
 
 def _answer_sheet(instance) -> dict | None:
@@ -183,6 +201,8 @@ class PreviewMixin(admin.ModelAdmin):
                 # A question, or a content item that asks one; the template leaves the section
                 # out for anything else.
                 "answer_sheet": _answer_sheet(instance),
+                # A hazard clip, or a content item showing one.
+                "hazard_sheet": _hazard_sheet(instance),
                 "opts": self.model._meta,
             },
         )
@@ -305,17 +325,18 @@ class LearningContentAdmin(PreviewMixin, PublishableAdmin):
     search_fields = ["title", "slug"]
     prepopulated_fields = {"slug": ("title",)}
     list_select_related = ["subchapter", "subchapter__chapter"]
-    autocomplete_fields = ["subchapter", "question", "media"]
+    autocomplete_fields = ["subchapter", "question", "media", "hazard_clip"]
     filter_horizontal = ["only_for_packages"]
     fieldsets = (
         (None, {"fields": ("subchapter", "content_type", "title", "slug", "order")}),
         (
             "Content",
             {
-                "fields": ("body_html", "question", "media"),
+                "fields": ("body_html", "question", "media", "hazard_clip"),
                 "description": (
-                    "Theory uses the text, question material uses the question, and video and "
-                    "document material use a file from the media library."
+                    "Theory uses the text, question material uses the question, video and "
+                    "document material use a file from the media library, and hazard material "
+                    "uses a clip."
                 ),
             },
         ),
@@ -559,3 +580,87 @@ class MediaAssetAdmin(admin.ModelAdmin):
         if not change:
             obj.uploaded_by = cast(User, request.user)
         super().save_model(request, obj, form, change)
+
+
+class HazardWindowInline(admin.TabularInline):
+    """When each hazard develops, edited beside the clip it belongs to.
+
+    The timings are the clip: get one wrong and students are marked down for spotting a hazard
+    correctly, which is why the preview plays the video with these marked on it.
+    """
+
+    model = HazardWindow
+    extra = 1
+    fields = ["order", "label", "starts_at", "ends_at", "bands"]
+    readonly_fields = ["bands"]
+    ordering = ["starts_at"]
+
+    @admin.display(description="Scores 5 → 1 across")
+    def bands(self, window: HazardWindow) -> str:
+        """Spells out the five bands, so staff can see what each second is worth."""
+        if window.pk is None or window.ends_at is None or window.starts_at is None:
+            return placeholder()
+
+        start, end = float(window.starts_at), float(window.ends_at)
+        step = (end - start) / HazardWindow.BANDS
+        edges = [start + step * band for band in range(HazardWindow.BANDS + 1)]
+        return format_html_join(
+            mark_safe(" · "),  # noqa: S308  # a separator we wrote, not user input
+            "{}s–{}s = {}",
+            (
+                (f"{edges[band]:.1f}", f"{edges[band + 1]:.1f}", HazardWindow.BANDS - band)
+                for band in range(HazardWindow.BANDS)
+            ),
+        )
+
+
+@admin.register(HazardClip)
+class HazardClipAdmin(PreviewMixin, PublishableAdmin):
+    """Hazard perception clips: a video from the library, plus when its hazards develop."""
+
+    list_display = ["title", "hazard_count", "top_score", "max_clicks", "order", "state"]
+    list_editable = ["order"]
+    list_filter = ["status"]
+    search_fields = ["title", "slug", "description"]
+    prepopulated_fields = {"slug": ("title",)}
+    autocomplete_fields = ["media"]
+    inlines = [HazardWindowInline]
+    fieldsets = (
+        (None, {"fields": ("title", "slug", "description", "media", "order")}),
+        (
+            "Scoring",
+            {
+                "fields": ("max_clicks",),
+                "description": (
+                    "Each hazard below is worth 5 down to 1, depending on how early in its window "
+                    "the student clicks. Clicking more often than the limit scores nothing at all."
+                ),
+            },
+        ),
+        (
+            "Publishing",
+            {"fields": ("status", "publish_from", "published_at", "published_by", "readiness", "preview_link")},
+        ),
+    )
+    readonly_fields = ["status", "published_at", "published_by", "readiness", "preview_link"]
+
+    @admin.display(description="Hazards")
+    def hazard_count(self, clip: HazardClip) -> int:
+        return clip.windows.count()
+
+    @admin.display(description="Top score")
+    def top_score(self, clip: HazardClip) -> int:
+        return clip.top_score
+
+
+@admin.register(HazardAttempt)
+class HazardAttemptAdmin(ReadOnlyAdmin):
+    list_display = ["student", "clip", "result", "voided", "created_at"]
+    list_filter = ["voided", "clip", "created_at"]
+    search_fields = ["student__email", "clip__title"]
+    list_select_related = ["student", "clip"]
+    date_hierarchy = "created_at"
+
+    @admin.display(description="Score")
+    def result(self, attempt: HazardAttempt) -> str:
+        return f"{attempt.score}/{attempt.top_score}"

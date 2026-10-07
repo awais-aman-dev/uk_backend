@@ -21,6 +21,8 @@ from apps.learning.models import (
     AVAILABLE_CONTENT_TYPES,
     Chapter,
     ContentType,
+    HazardAttempt,
+    HazardClip,
     LearningContent,
     LessonProgress,
     MediaKind,
@@ -89,23 +91,73 @@ def problems_with(instance) -> list[str]:
         return problems_with_question(instance)
     if isinstance(instance, PracticeExam):
         return problems_with_exam(instance)
+    if isinstance(instance, HazardClip):
+        return problems_with_clip(instance)
     return []
 
 
+def problems_with_clip(clip: HazardClip) -> list[str]:
+    """What would make a hazard clip unusable."""
+    problems = []
+    windows = list(clip.windows.all())
+
+    if clip.media.kind != MediaKind.VIDEO:
+        problems.append(f"'{clip.media.title}' is not a video, so there is nothing to watch.")
+
+    if not windows:
+        # Without one there is nothing to spot, and every attempt would score nothing.
+        problems.append("This clip has no hazards marked yet.")
+
+    length = clip.media.duration_seconds
+    for window in windows:
+        if length and float(window.ends_at) > length:
+            problems.append(f"'{window.label}' ends at {window.ends_at}s but the video is only {length}s long.")
+
+    # Overlapping windows would let one click score for two hazards at once.
+    in_order = sorted(windows, key=lambda window: window.starts_at)
+    for earlier, later in zip(in_order, in_order[1:], strict=False):
+        if later.starts_at < earlier.ends_at:
+            problems.append(f"'{earlier.label}' and '{later.label}' overlap, so one click would score twice.")
+
+    return problems
+
+
 def _problems_with_chapter(chapter: Chapter) -> list[str]:
-    if not live_subchapters_of(chapter).exists():
-        # A chapter with nothing inside it is an empty room for students.
-        return ["No subchapter in this chapter is published yet."]
+    # Nothing can stop a chapter going live. It is the top of the hierarchy, so it has no parent
+    # to be unreachable behind, and being empty is a warning rather than a refusal — see
+    # :func:`warnings_about`.
     return []
 
 
 def _problems_with_subchapter(subchapter: Subchapter) -> list[str]:
-    problems = []
     if not subchapter.chapter.is_published:
-        problems.append(f"Its chapter '{subchapter.chapter.title}' is not published, so students cannot reach it.")
-    if not live_content_of(subchapter).exists():
-        problems.append("Nothing in this subchapter is published yet.")
-    return problems
+        return [f"Its chapter '{subchapter.chapter.title}' is not published, so students cannot reach it."]
+    return []
+
+
+def warnings_about(instance) -> list[str]:
+    """What is worth knowing before publishing, but is not a reason to refuse.
+
+    The difference matters because of the order people work in. Material is built from the top
+    down — a chapter, then its subchapters, then what goes in them — so at the moment a chapter
+    is published it is always empty, and refusing to publish an empty one made it impossible to
+    publish anything at all: the chapter wanted a live subchapter, the subchapter wanted a live
+    chapter, and neither could go first.
+
+    So "there is nothing in here yet" is said rather than enforced. It costs nothing to be wrong
+    about, because the API only ever returns live children: an empty published chapter shows
+    students no lessons rather than a broken one.
+
+    What stays a refusal is the other direction — publishing something students could not reach,
+    because its parent is still a draft. That one cannot be worked around by filling it in later.
+    """
+    if isinstance(instance, Chapter):
+        if not live_subchapters_of(instance).exists():
+            return ["No subchapter in this chapter is published yet, so students will see it empty."]
+    if isinstance(instance, Subchapter):
+        if not live_content_of(instance).exists():
+            return ["Nothing in this subchapter is published yet, so students will see it empty."]
+    return []
 
 
 def problems_with_question(question: Question) -> list[str]:
@@ -164,6 +216,11 @@ def _problems_with_content(content: LearningContent) -> list[str]:
             problems.append("No question has been chosen from the bank.")
         elif not content.question.is_published:
             problems.append(f"The question '{content.question.key}' is not published yet.")
+    elif content.content_type == ContentType.HAZARD:
+        if content.hazard_clip is None:
+            problems.append("No hazard clip has been chosen.")
+        elif not content.hazard_clip.is_published:
+            problems.append(f"The clip '{content.hazard_clip.title}' is not published yet.")
     elif content.content_type in MEDIA_CONTENT_TYPES:
         wanted = MEDIA_CONTENT_TYPES[ContentType(content.content_type)]
         if content.media is None:
@@ -281,6 +338,15 @@ def student_view_of(instance) -> dict:
             "blocks": [block_for(instance)],
         }
 
+    if isinstance(instance, HazardClip):
+        # Nothing to read: what staff need to check is the video and where its hazards sit.
+        return {
+            "slug": instance.slug,
+            "title": instance.title,
+            "summary": instance.description,
+            "blocks": [],
+        }
+
     if isinstance(instance, Question):
         # A question has no body to render, so the preview page shows the answer sheet instead.
         return {
@@ -340,6 +406,13 @@ def block_for(content: LearningContent) -> dict:
     """
     if content.content_type == ContentType.QUESTION and content.question:
         return {"type": "check", "questions": [content.question.key], "title": content.title}
+
+    if content.content_type == ContentType.HAZARD and content.hazard_clip:
+        return {
+            "type": "hazard",
+            "title": content.title,
+            "clips": [content.hazard_clip.slug],
+        }
 
     if content.content_type in MEDIA_CONTENT_TYPES and content.media:
         return {
@@ -577,6 +650,8 @@ def progress_summary(student) -> dict:
     bank = live(Question.objects.all()).count()
     sittings = MockAttempt.objects.filter(student=student)
     best = sittings.order_by("-score").first()
+    clips = HazardAttempt.objects.filter(student=student)
+    best_clip = clips.order_by("-score").first()
 
     return {
         "streak": streak(student),
@@ -589,4 +664,96 @@ def progress_summary(student) -> dict:
         "mockAttempts": sittings.count(),
         "mocksPassed": sittings.filter(passed=True).count(),
         "bestMockScore": best.score if best else None,
+        "hazardAttempts": clips.count(),
+        "bestHazardScore": best_clip.score if best_clip else None,
+    }
+
+
+# --- Hazard perception ---------------------------------------------------------------------------
+
+
+def student_view_of_clip(clip: HazardClip) -> dict:
+    """A clip as a student is given it, before they watch.
+
+    Deliberately without the hazard timings: sending them would tell the student exactly when to
+    click, which is the entire thing being tested. Only the clip's own scoring happens here, and
+    only after they have committed to their clicks.
+    """
+    return {
+        "slug": clip.slug,
+        "title": clip.title,
+        "description": clip.description,
+        "url": clip.media.file.url,
+        "durationSeconds": clip.media.duration_seconds,
+        "hazards": clip.windows.count(),
+        "topScore": clip.top_score,
+        "maxClicks": clip.max_clicks,
+    }
+
+
+def score_clip(clip: HazardClip, clicked_at: list[float]) -> dict:
+    """Score one attempt at a clip.
+
+    Each hazard is scored by the best click that fell inside its window, so a student who clicks
+    twice at the same hazard is neither rewarded nor punished for the second click. Clicking more
+    than the clip allows scores nothing at all, which is what stops clicking throughout from
+    passing as perception.
+    """
+    windows = list(clip.windows.all())
+    voided = len(clicked_at) > clip.max_clicks
+
+    hazards: list[dict] = []
+    score = 0
+    for window in windows:
+        best = 0 if voided else max((window.score_for(moment) for moment in clicked_at), default=0)
+        score += best
+        hazards.append(
+            {
+                "label": window.label,
+                "startsAt": float(window.starts_at),
+                "endsAt": float(window.ends_at),
+                "score": best,
+                "spotted": best > 0,
+            }
+        )
+
+    return {
+        "score": score,
+        "topScore": clip.top_score,
+        "voided": voided,
+        # Revealed now the attempt is over, so the student can see what they missed and when.
+        "hazards": hazards,
+    }
+
+
+def record_hazard_attempt(student, clip: HazardClip, result: dict) -> None:
+    """Remember one go at a clip, with the score it earned."""
+    HazardAttempt.objects.create(
+        student=student,
+        clip=clip,
+        score=result["score"],
+        top_score=result["topScore"],
+        voided=result["voided"],
+    )
+
+
+def hazard_sheet_for(clip: HazardClip) -> dict:
+    """A clip with its hazard timings, for staff checking them before publishing.
+
+    A separate function from :func:`student_view_of_clip`, which never carries the timings, so a
+    page meant for staff cannot be wired to students by mistake.
+    """
+    return {
+        "url": clip.media.file.url,
+        "duration": clip.media.duration_seconds,
+        "max_clicks": clip.max_clicks,
+        "top_score": clip.top_score,
+        "windows": [
+            {
+                "label": window.label,
+                "starts_at": float(window.starts_at),
+                "ends_at": float(window.ends_at),
+            }
+            for window in clip.windows.all()
+        ],
     }
