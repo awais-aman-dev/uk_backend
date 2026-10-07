@@ -229,17 +229,44 @@ STORAGES: dict[str, dict] = {
 
 S3_BUCKET_NAME = env.str("S3_BUCKET_NAME", default="")
 S3_ENDPOINT_URL = env.str("S3_ENDPOINT_URL", default="")
+S3_ACCESS_KEY_ID = env.str("S3_ACCESS_KEY_ID", default="")
+S3_SECRET_ACCESS_KEY = env.str("S3_SECRET_ACCESS_KEY", default="")
 MEDIA_URL = "/api/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-if S3_BUCKET_NAME:
+# All four or none. Reading the credentials without a default used to raise while settings were
+# being imported, which stops Django starting rather than stopping uploads: a half-configured
+# bucket took the whole site down, including signing in and paying, neither of which needs one.
+# Uploads are worth less than the site being up, so a missing credential falls back to the disk
+# and says so loudly in the logs.
+S3_CONFIGURED = all([S3_BUCKET_NAME, S3_ENDPOINT_URL, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY])
+
+if S3_BUCKET_NAME and not S3_CONFIGURED:
+    import warnings
+
+    missing = [
+        name
+        for name, value in (
+            ("S3_ENDPOINT_URL", S3_ENDPOINT_URL),
+            ("S3_ACCESS_KEY_ID", S3_ACCESS_KEY_ID),
+            ("S3_SECRET_ACCESS_KEY", S3_SECRET_ACCESS_KEY),
+        )
+        if not value
+    ]
+    warnings.warn(
+        f"S3_BUCKET_NAME is set but {', '.join(missing)} is not, so uploads are being stored on "
+        "the local disk and will be lost on the next deploy.",
+        stacklevel=1,
+    )
+
+if S3_CONFIGURED:
     STORAGES["default"] = {
         "BACKEND": "storages.backends.s3.S3Storage",
         "OPTIONS": {
             "bucket_name": S3_BUCKET_NAME,
             "endpoint_url": S3_ENDPOINT_URL,
-            "access_key": env.str("S3_ACCESS_KEY_ID"),
-            "secret_key": env.str("S3_SECRET_ACCESS_KEY"),
+            "access_key": S3_ACCESS_KEY_ID,
+            "secret_key": S3_SECRET_ACCESS_KEY,
             "region_name": env.str("S3_REGION", default="auto"),
             # Every URL is signed and short-lived, so the bucket stays private and a link that
             # leaks stops working. The backend checks entitlements before it signs one.
