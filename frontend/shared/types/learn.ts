@@ -10,7 +10,8 @@ export type Block =
   | { type: 'figure'; figure: FigureKey; caption?: string }
   | { type: 'signs'; codes: string[]; caption?: string }
   | { type: 'scene'; clip: string; caption?: string } // loops a hazard clip as an illustration
-  | { type: 'check'; questions: string[] } // question keys
+  | { type: 'check'; questions: string[]; title?: string } // question keys
+  | { type: 'html'; html: string; title?: string } // theory written in the Django admin (sanitised on our server)
 
 export type FigureKey = 'stopping-distances' | 'sign-shapes' | 'two-second-rule' | 'mirror-signal'
 

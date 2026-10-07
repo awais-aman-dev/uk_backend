@@ -61,10 +61,16 @@ const checkQuestions = (keys: string[]) => keys.map((k) => props.questions?.[k])
       </figure>
 
       <section v-else-if="b.type === 'check' && checkQuestions(b.questions).length" class="check">
-        <h3><AppIcon name="target" :size="20" /> Check your understanding</h3>
+        <h3><AppIcon name="target" :size="20" /> {{ b.title || 'Check your understanding' }}</h3>
         <div v-for="q in checkQuestions(b.questions)" :key="q.id" class="check__q">
           <LearnQuestionCard :question="q" :signs="signs" context="lesson" @answered="(r) => emit('checked', r.correct)" />
         </div>
+      </section>
+
+      <!-- Theory from the Django admin: HTML, already sanitised by our server -->
+      <section v-else-if="b.type === 'html'" class="html-block">
+        <h2 v-if="b.title" class="blocks__h">{{ b.title }}</h2>
+        <div class="html-block__body" v-html="b.html" />
       </section>
     </template>
   </div>
@@ -73,6 +79,16 @@ const checkQuestions = (keys: string[]) => keys.map((k) => props.questions?.[k])
 <style scoped>
 .blocks { display: grid; gap: 22px; color: var(--ink); font-size: 1.0625rem; line-height: 1.6; }
 .blocks :deep(.rich strong) { font-weight: 600; }
+.html-block { display: grid; gap: 12px; }
+.html-block__body :deep(p) { margin: 0 0 0.8em; }
+.html-block__body :deep(:is(h2, h3, h4)) { margin: 1em 0 0.4em; color: var(--ink); }
+.html-block__body :deep(:is(ul, ol)) { margin: 0 0 0.8em; padding-left: 1.4em; }
+.html-block__body :deep(li) { margin: 0.25em 0; }
+.html-block__body :deep(a) { color: var(--accent); }
+.html-block__body :deep(img) { max-width: 100%; height: auto; border-radius: 14px; }
+.html-block__body :deep(table) { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+.html-block__body :deep(:is(td, th)) { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+.html-block__body :deep(blockquote) { margin: 0; padding: 12px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 12px 12px 0; }
 .blocks__h { margin-top: 12px; font-size: 1.5rem; }
 .kp { padding: 20px 22px; border-radius: 20px; background: var(--card-2); }
 .kp h3 { margin-bottom: 12px; font-size: 1.125rem; }

@@ -8,6 +8,8 @@ const query = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  // Material from the Django backend once it has some (see server/utils/django-learn.ts)
+  if (await useDjangoLearning(event)) return djangoLearn(event, 'GET', `/api/learn/practice/?${new URLSearchParams(getQuery(event) as Record<string, string>)}`)
   const user = await requireAccess(event)
   const q = query.parse(getQuery(event))
   const db = await useDb()

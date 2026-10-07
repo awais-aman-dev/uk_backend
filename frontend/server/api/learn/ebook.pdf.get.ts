@@ -11,6 +11,8 @@ const MUTED = rgb(0.43, 0.43, 0.45)
 const ACCENT = rgb(0, 0.443, 0.89)
 
 export default defineEventHandler(async (event) => {
+  // Material from the Django backend once it has some (see server/utils/django-learn.ts)
+  if (await useDjangoLearning(event)) throw createError({ statusCode: 404, statusMessage: 'The PDF is not available yet' })
   await requireAccess(event)
   const db = await useDb()
   const chapters = await db.select().from(schema.ebookChapters).orderBy(asc(schema.ebookChapters.position))

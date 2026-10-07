@@ -3,6 +3,8 @@ import { z } from 'zod'
 
 // Practice / lesson checks: the answer is only revealed after the learner commits.
 export default defineEventHandler(async (event) => {
+  // Material from the Django backend once it has some (see server/utils/django-learn.ts)
+  if (await useDjangoLearning(event)) return djangoLearn(event, 'POST', '/api/learn/answer/', await readBody(event))
   const user = await requireAccess(event)
   const body = await readValidated(
     event,

@@ -17,8 +17,8 @@ const resume = computed(() => data.value?.chapters.find((c) => c.slug === data.v
         <small>1Theory study guide</small>
       </div>
       <div class="book__info">
-        <p class="book__meta">{{ data.chapters.length }} chapters · {{ read }} read</p>
-        <div class="book__bar"><i :style="{ width: `${(read / data.chapters.length) * 100}%` }" /></div>
+        <p class="book__meta">{{ data.chapters.length ? `${data.chapters.length} chapters · ${read} read` : "Chapters are on their way — check back soon." }}</p>
+        <div v-if="data.chapters.length" class="book__bar"><i :style="{ width: `${(read / data.chapters.length) * 100}%` }" /></div>
         <p>Every rule you need for the theory test, rewritten so it actually makes sense. Read it here — we remember where you got to — or download it to read offline.</p>
         <div class="book__actions">
           <NuxtLink v-if="resume" :to="`/learn/ebook/${resume.slug}`" class="btn btn--primary btn--lg">{{ data.current ? 'Continue reading' : 'Start reading' }}</NuxtLink>

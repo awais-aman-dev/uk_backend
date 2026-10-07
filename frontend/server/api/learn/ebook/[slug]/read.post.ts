@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
+  // Material from the Django backend once it has some (see server/utils/django-learn.ts)
+  if (await useDjangoLearning(event)) return { ok: true }
   const user = await requireAccess(event)
   const slug = getRouterParam(event, 'slug')!
   const db = await useDb()

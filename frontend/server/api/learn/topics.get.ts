@@ -2,6 +2,8 @@ import { asc, eq } from 'drizzle-orm'
 
 // The catalogue (titles only) — visible to any signed-in user, so locked screens can still show what's inside.
 export default defineEventHandler(async (event) => {
+  // Material from the Django backend once it has some (see server/utils/django-learn.ts)
+  if (await useDjangoLearning(event)) return djangoLearn(event, 'GET', '/api/learn/topics/')
   const user = await requireUser(event)
   const db = await useDb()
   const [topics, lessons, done, ready, questionCounts] = await Promise.all([
