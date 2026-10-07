@@ -39,7 +39,24 @@
                 Safe to render: the HTML was cleaned against an allowlist when it was saved, so
                 the database never holds anything a student page could not be given.
             {% endcomment %}
-            {% if answer_sheet %}
+            {% if hazard_sheet %}
+                {% comment %}
+                    The clip with its hazards listed. A student is never sent these timings — the
+                    point of showing them here is that a mistimed window is otherwise invisible
+                    until students are marked down for spotting a hazard correctly.
+                {% endcomment %}
+                <video class="adm-preview__video" controls preload="metadata" src="{{ hazard_sheet.url }}"></video>
+                <p class="adm-preview__meta">
+                    Up to {{ hazard_sheet.max_clicks }} clicks · top score {{ hazard_sheet.top_score }}
+                </p>
+                <ol class="adm-preview__answers">
+                    {% for window in hazard_sheet.windows %}
+                        <li>{{ window.label }} — {{ window.starts_at }}s to {{ window.ends_at }}s</li>
+                    {% empty %}
+                        <li class="adm-preview__placeholder">No hazards are marked yet.</li>
+                    {% endfor %}
+                </ol>
+            {% elif answer_sheet %}
                 {% comment %}
                     A question, so there is nothing to read: what staff need to check is the
                     answers. The right one is marked here, which a student's page never does.

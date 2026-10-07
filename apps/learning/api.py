@@ -26,6 +26,7 @@ from apps.learning import services
 from apps.learning.models import (
     Chapter,
     ExamKind,
+    HazardClip,
     PracticeExam,
     Question,
     SavedQuestion,
@@ -42,6 +43,10 @@ from apps.learning.serializers import (
     ExamListResponseSerializer,
     ExamResultResponseSerializer,
     ExamSubmissionSerializer,
+    HazardAttemptRequestSerializer,
+    HazardAttemptResponseSerializer,
+    HazardClipListResponseSerializer,
+    HazardClipSerializer,
     LessonDetailResponseSerializer,
     PracticeSetResponseSerializer,
     ProgressSummaryResponseSerializer,
@@ -173,9 +178,19 @@ class LessonDetailView(APIView):
                 "next": _link(neighbours, position, 1),
                 "signs": {},
                 "questions": _questions_in(content),
-                "clips": {},
+                "clips": _clips_in(content),
             }
         )
+
+
+def _clips_in(content) -> dict:
+    """The hazard clips a lesson's hazard blocks name, by slug.
+
+    Sent with the lesson so the frontend has the video URL in one response, and without the
+    hazard timings, which only come back with a score.
+    """
+    clips = [item.hazard_clip for item in content if item.hazard_clip_id and item.hazard_clip.is_published]
+    return {clip.slug: services.student_view_of_clip(clip) for clip in clips}
 
 
 def _questions_in(content) -> dict:
@@ -623,3 +638,70 @@ class ProgressView(APIView):
     )
     def get(self, request: Request) -> Response:
         return Response(services.progress_summary(cast(User, request.user)))
+
+
+class HazardClipListView(APIView):
+    """The hazard clips a student can practise with."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="listHazardClips",
+        summary="List the hazard perception clips",
+        responses={200: HazardClipListResponseSerializer},
+    )
+    def get(self, request: Request) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        clips = services.live(HazardClip.objects.select_related("media")).order_by("order", "title")
+        return Response({"clips": [services.student_view_of_clip(clip) for clip in clips]})
+
+
+class HazardClipView(APIView):
+    """One clip to watch."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(operation_id="getHazardClip", summary="Watch a hazard clip", responses={200: HazardClipSerializer})
+    def get(self, request: Request, slug: str) -> Response:
+        student = cast(User, request.user)
+        clip = self._find(student, slug)
+        if clip is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(services.student_view_of_clip(clip))
+
+    def _find(self, student, slug: str):
+        if not entitlements.has_access(student):
+            return None
+        return services.live(HazardClip.objects.select_related("media")).filter(slug=slug).first()
+
+
+class HazardAttemptView(APIView):
+    """Score an attempt at a clip."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="submitHazardAttempt",
+        summary="Submit an attempt at a hazard clip",
+        request=HazardAttemptRequestSerializer,
+        responses={200: HazardAttemptResponseSerializer},
+    )
+    def post(self, request: Request, slug: str) -> Response:
+        student = cast(User, request.user)
+        if not entitlements.has_access(student):
+            return plan_needed()
+
+        clip = services.live(HazardClip.objects.prefetch_related("windows")).filter(slug=slug).first()
+        if clip is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        attempt = HazardAttemptRequestSerializer(data=request.data)
+        attempt.is_valid(raise_exception=True)
+
+        # Scored on the server: the client was never told when the hazards were.
+        result = services.score_clip(clip, attempt.validated_data["clicks"])
+        services.record_hazard_attempt(student, clip, result)
+        return Response(result)

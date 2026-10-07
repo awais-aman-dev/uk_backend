@@ -89,6 +89,17 @@ class QuestionMapField(serializers.DictField):
 # --- Content blocks ------------------------------------------------------------------------------
 
 
+class HazardBlockSerializer(serializers.Serializer):
+    """A hazard clip to watch and click through."""
+
+    type = serializers.ChoiceField(choices=[("hazard", "hazard")])
+    title = serializers.CharField()
+    clips = serializers.ListField(
+        child=serializers.SlugField(),
+        help_text="Clip slugs to look up in the response's `clips` map.",
+    )
+
+
 class HtmlBlockSerializer(serializers.Serializer):
     """Material to read. The HTML was cleaned against an allowlist before it was stored."""
 
@@ -130,6 +141,7 @@ CONTENT_BLOCK = PolymorphicProxySerializer(
         "check": CheckBlockSerializer,
         "video": MediaBlockSerializer,
         "document": MediaBlockSerializer,
+        "hazard": HazardBlockSerializer,
     },
     resource_type_field_name="type",
 )
@@ -154,15 +166,31 @@ class LinkSerializer(serializers.Serializer):
     title = serializers.CharField()
 
 
-class ClipMapField(serializers.DictField):
-    """Hazard clips, keyed by code.
+class HazardClipSerializer(serializers.Serializer):
+    """A clip as a student is given it.
 
-    Always empty today: hazard perception is part of the shape the frontend expects, not yet of
-    the product. The key is sent so the frontend needs no special case for its absence.
+    No hazard timings: sending them would say exactly when to click, which is what is being
+    tested. They come back with the score, once the attempt is over.
     """
 
+    slug = serializers.CharField()
+    title = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    url = serializers.URLField(help_text="A short-lived signed URL for the video. Do not cache it.")
+    durationSeconds = serializers.IntegerField(allow_null=True)  # noqa: N815
+    hazards = serializers.IntegerField(help_text="How many hazards are in the clip, but not when.")
+    topScore = serializers.IntegerField(help_text="The most this clip can score: five per hazard.")  # noqa: N815
+    maxClicks = serializers.IntegerField(  # noqa: N815
+        help_text="Clicking more often than this scores nothing, as in the real test."
+    )
+
+
+class ClipMapField(serializers.DictField):
+    """The hazard clips a response's hazard blocks name, keyed by slug."""
+
     def __init__(self, **kwargs):
-        kwargs.setdefault("help_text", "Always empty until hazard clips are part of the product.")
+        kwargs.setdefault("child", HazardClipSerializer())
+        kwargs.setdefault("help_text", "The clips this content shows, keyed by the slug its hazard blocks name.")
         super().__init__(**kwargs)
 
 
@@ -380,6 +408,8 @@ class ProgressSummaryResponseSerializer(serializers.Serializer):
     mockAttempts = serializers.IntegerField()  # noqa: N815
     mocksPassed = serializers.IntegerField()  # noqa: N815
     bestMockScore = serializers.IntegerField(allow_null=True)  # noqa: N815
+    hazardAttempts = serializers.IntegerField()  # noqa: N815
+    bestHazardScore = serializers.IntegerField(allow_null=True)  # noqa: N815
 
 
 class DoneResponseSerializer(serializers.Serializer):
@@ -390,3 +420,40 @@ class DoneResponseSerializer(serializers.Serializer):
 
 class SavedResponseSerializer(serializers.Serializer):
     saved = serializers.BooleanField()
+
+
+# --- Hazard perception ---------------------------------------------------------------------------
+
+
+class HazardClipListResponseSerializer(serializers.Serializer):
+    clips = HazardClipSerializer(many=True)
+
+
+class HazardAttemptRequestSerializer(serializers.Serializer):
+    """A finished attempt, posted to be scored."""
+
+    clicks = serializers.ListField(
+        child=serializers.FloatField(min_value=0),
+        allow_empty=True,
+        help_text="Seconds into the clip at which the student clicked, e.g. [4.2, 11.8].",
+    )
+
+
+class HazardResultSerializer(serializers.Serializer):
+    """How one hazard was scored, revealed once the attempt is over."""
+
+    # "label" is also the name of an attribute every DRF field has, which is why mypy objects.
+    # Safe here: the serializer metaclass moves declared fields off the class before anything
+    # reads Field.label. Named for the API, which calls the hazard's description its label.
+    label = serializers.CharField(help_text="What the hazard was.")  # type: ignore[assignment]
+    startsAt = serializers.FloatField()  # noqa: N815
+    endsAt = serializers.FloatField()  # noqa: N815
+    score = serializers.IntegerField(help_text="5 for spotting it earliest, down to 1, or 0 if missed.")
+    spotted = serializers.BooleanField()
+
+
+class HazardAttemptResponseSerializer(serializers.Serializer):
+    score = serializers.IntegerField()
+    topScore = serializers.IntegerField()  # noqa: N815
+    voided = serializers.BooleanField(help_text="True when the clip was clicked through too often to count.")
+    hazards = HazardResultSerializer(many=True, help_text="Every hazard, spotted or not, with its timing.")

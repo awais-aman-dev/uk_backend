@@ -19,4 +19,8 @@ urlpatterns = [
     path("learn/lessons/<slug:slug>/complete/", api.LessonCompleteView.as_view(), name="learn-lesson-complete"),
     path("learn/questions/<slug:key>/saved/", api.SavedQuestionView.as_view(), name="learn-question-saved"),
     path("learn/progress/", api.ProgressView.as_view(), name="learn-progress"),
+    # Hazard perception. The clip's hazard timings are never sent, only its score afterwards.
+    path("learn/hazard/", api.HazardClipListView.as_view(), name="learn-hazard-clips"),
+    path("learn/hazard/<slug:slug>/", api.HazardClipView.as_view(), name="learn-hazard-clip"),
+    path("learn/hazard/<slug:slug>/attempt/", api.HazardAttemptView.as_view(), name="learn-hazard-attempt"),
 ]

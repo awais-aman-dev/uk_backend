@@ -109,15 +109,6 @@ class TestPublishing:
         with pytest.raises(services.NotReadyToPublishError, match="is document, but this is video"):
             services.publish(actor=publisher, instance=item)
 
-    def test_hazard_material_is_still_refused(self, publisher, subchapter, video):
-        """Hazard clips need scoring windows, which are not built yet."""
-        subchapter.status = PublishStatus.PUBLISHED
-        subchapter.save(update_fields=["status"])
-        item = media_content(subchapter, video, ContentType.HAZARD)
-
-        with pytest.raises(services.NotReadyToPublishError, match="cannot be served yet"):
-            services.publish(actor=publisher, instance=item)
-
 
 class TestBlocks:
     def test_a_video_is_served_as_a_video_block(self, subchapter, video):
@@ -227,11 +218,6 @@ class TestTheAdmin:
 
         assert 'value="video"' in page
         assert 'value="document"' in page
-
-    def test_hazard_is_still_not_offered(self, editor_client, content):
-        page = editor_client.get(reverse("admin:learning_learningcontent_change", args=[content.pk])).content.decode()
-
-        assert 'value="hazard"' not in page
 
     def test_the_preview_plays_a_video_rather_than_printing_its_url(
         self, editor_client, published_tree, subchapter, publisher, video

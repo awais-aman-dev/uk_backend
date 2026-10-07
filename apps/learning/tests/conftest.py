@@ -8,7 +8,6 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.billing.models import Order, OrderStatus
 from apps.catalog.models import Package
-from apps.core.models import PublishStatus
 from apps.entitlements import services as entitlements
 from apps.learning.models import (
     Chapter,
@@ -119,18 +118,17 @@ def make_question(chapter):
 def published_tree(chapter, subchapter, content, publisher):
     """A whole branch live, from the chapter down, which is the usual starting point.
 
-    The parents are set published directly, because each level refuses to go live while its own
-    parent is still a draft — the rule under test elsewhere.
+    Published the way staff do it — top down, through the service — so every test that starts
+    from a live branch is also exercising that the order works.
     """
     from apps.learning import services
 
-    chapter.status = PublishStatus.PUBLISHED
-    chapter.save(update_fields=["status"])
-    subchapter.status = PublishStatus.PUBLISHED
-    subchapter.save(update_fields=["status"])
-
+    services.publish(actor=publisher, instance=chapter)
+    services.publish(actor=publisher, instance=subchapter)
     services.publish(actor=publisher, instance=content)
-    content.refresh_from_db()
+
+    for item in (chapter, subchapter, content):
+        item.refresh_from_db()
     return chapter, subchapter, content
 
 

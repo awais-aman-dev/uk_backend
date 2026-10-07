@@ -103,6 +103,7 @@ AVAILABLE_CONTENT_TYPES = (
     ContentType.QUESTION,
     ContentType.VIDEO,
     ContentType.DOCUMENT,
+    ContentType.HAZARD,
 )
 
 
@@ -126,6 +127,14 @@ class LearningContent(PublishableModel, TimestampedModel):
         blank=True,
         related_name="used_in",
         help_text="Used by video and document material: which file to show.",
+    )
+    hazard_clip = models.ForeignKey(
+        "learning.HazardClip",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="used_in",
+        help_text="Used by hazard material: which clip to show.",
     )
     question = models.ForeignKey(
         "learning.Question",
@@ -449,6 +458,9 @@ class LessonProgress(models.Model):
 
     class Meta:
         ordering = ["-completed_at"]
+        # Django would otherwise pluralise "lesson progress" as "lesson progresss".
+        verbose_name = "lesson progress"
+        verbose_name_plural = "lesson progress"
         constraints = [models.UniqueConstraint(fields=["student", "subchapter"], name="one_progress_row_per_lesson")]
 
     def __str__(self) -> str:
@@ -468,3 +480,117 @@ class SavedQuestion(models.Model):
 
     def __str__(self) -> str:
         return f"{self.student} · {self.question.key}"
+
+
+# --- Hazard perception ---------------------------------------------------------------------------
+#
+# A hazard clip is a piece of video with one or more moments in it where a hazard develops. The
+# student clicks when they spot one, and the score depends on how early in that moment they
+# clicked: the real test divides each hazard into five bands worth 5 down to 1.
+#
+# Staff give each hazard a single start and end, and the bands are worked out by dividing that
+# window into five. One pair of numbers per hazard is enough to describe it and is far easier to
+# get right than five, which matters because a mistimed window is invisible until students
+# complain about it.
+
+
+class HazardClip(PublishableModel, TimestampedModel):
+    """A video with hazards in it for a student to spot.
+
+    The video comes from the media library like any other file, so a clip is the hazards plus a
+    reference — nothing is uploaded twice.
+    """
+
+    slug = models.SlugField(unique=True)
+    title = models.CharField(max_length=160)
+    description = models.CharField(max_length=300, blank=True)
+    media = models.ForeignKey(
+        "learning.MediaAsset",
+        on_delete=models.PROTECT,
+        related_name="hazard_clips",
+        help_text="The video from the media library.",
+    )
+    # The real test ends an attempt that is clicked through indiscriminately, because clicking
+    # constantly would otherwise score full marks without spotting anything.
+    max_clicks = models.PositiveSmallIntegerField(
+        default=15,
+        help_text="Clicking more often than this scores nothing for the clip, as in the real test.",
+    )
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "title"]
+        permissions = [("publish_hazardclip", "Can publish and unpublish hazard clips")]
+
+    def __str__(self) -> str:
+        return self.title
+
+    @property
+    def top_score(self) -> int:
+        """The most a student could score: five per hazard."""
+        return self.windows.count() * HazardWindow.BANDS
+
+
+class HazardWindow(models.Model):
+    """When one hazard is developing, and so when a click counts.
+
+    The window is split into five equal bands. A click in the first band scores 5, the next 4, and
+    so on to 1 in the last; a click outside every window scores nothing. Spotting a hazard early
+    is the whole skill being tested, which is why the earliest band is worth the most.
+    """
+
+    #: How many score bands a window is divided into. Five, as in the real test.
+    BANDS = 5
+
+    clip = models.ForeignKey(HazardClip, on_delete=models.CASCADE, related_name="windows")
+    label = models.CharField(max_length=120, help_text="What the hazard is, for staff. Never shown to students.")
+    starts_at = models.DecimalField(
+        max_digits=6, decimal_places=2, help_text="Seconds into the clip where the hazard starts developing."
+    )
+    ends_at = models.DecimalField(
+        max_digits=6, decimal_places=2, help_text="Seconds into the clip by which it should have been spotted."
+    )
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["clip", "starts_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(ends_at__gt=models.F("starts_at")), name="hazard_window_ends_after_it_starts"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.label} ({self.starts_at}–{self.ends_at}s)"
+
+    def score_for(self, clicked_at: float) -> int:
+        """What a click at this moment is worth: 5 in the first fifth of the window, down to 1."""
+        start, end = float(self.starts_at), float(self.ends_at)
+        if not start <= clicked_at <= end:
+            return 0
+
+        band_length = (end - start) / self.BANDS
+        band = int((clicked_at - start) / band_length)
+        # A click exactly on the end lands one band past the last one.
+        return self.BANDS - min(band, self.BANDS - 1)
+
+
+class HazardAttempt(TimestampedModel):
+    """One go at a clip, and what it scored.
+
+    The score is stored rather than recomputed, because retiming a hazard afterwards should not
+    change what a student already achieved.
+    """
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hazard_attempts")
+    clip = models.ForeignKey(HazardClip, on_delete=models.CASCADE, related_name="attempts")
+    score = models.PositiveSmallIntegerField()
+    top_score = models.PositiveSmallIntegerField(help_text="The most that was available at the time.")
+    voided = models.BooleanField(default=False, help_text="True when the clip was clicked through too often.")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["student", "clip"])]
+
+    def __str__(self) -> str:
+        return f"{self.student} · {self.clip.title} · {self.score}/{self.top_score}"
