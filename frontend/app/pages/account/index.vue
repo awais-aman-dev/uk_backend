@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatGBP } from '#shared/money'
+import { canLearn, SUB } from '#shared/types/billing'
 
 definePageMeta({ middleware: 'auth' })
 useHead({ title: 'My account — 1Theory' })
@@ -13,12 +14,13 @@ const { packages } = await usePackages()
 const checkout = useCheckout()
 
 const sub = computed(() => data.value?.subscription ?? null)
-const hasAccess = computed(() => !!sub.value && sub.value.state !== 'expired')
+const hasAccess = computed(() => canLearn(sub.value?.state))
 const firstName = computed(() => data.value?.profile.firstName)
 
-// Arrived from the payment page before the backend finished granting access (?activating=1):
-// say so and keep checking until the plan shows up (up to 5 minutes)
-const activating = ref(route.query.activating === '1' && !hasAccess.value)
+// Paid, but the backend hasn't switched the access on yet: either the plan is there and still activating, or
+// we came from the payment page (?activating=1) before it even shows. Say so and keep checking (up to 5 minutes).
+const cameFromPayment = route.query.activating === '1'
+const activating = computed(() => sub.value?.state === SUB.ACTIVATING || (cameFromPayment && !hasAccess.value && sub.value?.state !== SUB.EXPIRED))
 let activationTimer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   if (!activating.value) return
@@ -26,10 +28,9 @@ onMounted(() => {
   activationTimer = setInterval(async () => {
     await refresh()
     if (hasAccess.value) {
-      activating.value = false
       clearInterval(activationTimer)
       toast.show('Your access is active. Enjoy!')
-      router.replace('/account')
+      if (cameFromPayment) router.replace('/account')
     } else if (Date.now() - started > 5 * 60_000) {
       clearInterval(activationTimer)
     }
@@ -76,25 +77,27 @@ const used = computed(() => {
         </div>
       </header>
 
-      <UiAlert v-if="activating" variant="info">
-        Payment received — we’re activating your access. This page updates by itself; it usually takes a minute or two.
-      </UiAlert>
       <UiAlert v-if="data && !data.profile.emailVerified" variant="info">
         Please confirm your email address — we sent a link to <b>{{ data.profile.email }}</b>.
         <button type="button" class="linklike" :disabled="resending" @click="resendVerification">Send it again</button>
       </UiAlert>
 
       <!-- Subscription -->
-      <div class="sub" :class="sub ? `sub--${sub.state}` : 'sub--none'">
+      <div class="sub" :class="activating ? 'sub--activating' : sub ? `sub--${sub.state}` : 'sub--none'">
         <div class="sub__top">
           <div>
             <p class="sub__label">Your access</p>
-            <h2>{{ sub ? sub.planName : 'No plan yet' }}</h2>
+            <h2>{{ sub ? sub.planName : activating ? 'Your plan' : 'No plan yet' }}</h2>
           </div>
-          <StatusBadge :status="!sub ? 'none' : sub.state === 'expired' ? 'sub_expired' : sub.state" />
+          <StatusBadge :status="activating ? SUB.ACTIVATING : !sub ? 'none' : sub.state === SUB.EXPIRED ? 'sub_expired' : sub.state" />
         </div>
 
-        <template v-if="sub">
+        <!-- paid, access being switched on: no days / dates yet -->
+        <p v-if="activating" class="sub__note sub__note--activating" role="status">
+          <span class="sub__spinner" aria-hidden="true" />
+          Payment received — we’re activating your access. This usually takes a minute or two; this page updates by itself.
+        </p>
+        <template v-else-if="sub">
           <div class="sub__stats">
             <div>
               <strong>{{ sub.daysLeft }}</strong>
@@ -102,12 +105,12 @@ const used = computed(() => {
             </div>
             <div>
               <strong class="sub__date">{{ formatDate(sub.endsAt) }}</strong>
-              <span>{{ sub.state === 'expired' ? 'ended' : 'access until' }}</span>
+              <span>{{ sub.state === SUB.EXPIRED ? 'ended' : 'access until' }}</span>
             </div>
           </div>
           <div class="sub__bar" aria-hidden="true"><i :style="{ transform: `scaleX(${1 - used})` }" /></div>
-          <p v-if="sub.state === 'ends_soon'" class="sub__note">Your access ends soon — extend now so you don't lose your progress streak.</p>
-          <p v-if="sub.state === 'expired'" class="sub__note">
+          <p v-if="sub.state === SUB.ENDS_SOON" class="sub__note">Your access ends soon — extend now so you don't lose your progress streak.</p>
+          <p v-if="sub.state === SUB.EXPIRED" class="sub__note">
             Your access has ended. Pick a plan below to carry on — your progress is saved.
             <template v-if="data?.accountExpiresAt"> Your account stays open until {{ formatDate(data.accountExpiresAt) }}.</template>
           </p>
@@ -118,11 +121,14 @@ const used = computed(() => {
           <NuxtLink v-if="hasAccess" to="/learn" class="btn btn--primary btn--lg">
             Start learning <span class="arrow" aria-hidden="true">→</span>
           </NuxtLink>
+          <button v-else-if="activating" type="button" class="btn btn--primary btn--lg" disabled>
+            Start learning <span class="arrow" aria-hidden="true">→</span>
+          </button>
         </div>
       </div>
 
       <!-- Extend / buy -->
-      <div class="extend">
+      <div v-if="!activating" class="extend">
         <h2>{{ hasAccess ? 'Extend your access' : 'Choose a plan' }}</h2>
         <p v-if="hasAccess" class="muted">New days are added after your current access ends — you never lose time.</p>
         <UiAlert v-if="checkout.error.value">{{ checkout.error.value }}</UiAlert>
@@ -197,6 +203,10 @@ h2 { font-size: 1.5rem; }
 .sub__bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #30d158, #2997ff); transform-origin: left; transition: transform 1s var(--ease); }
 .sub--ends_soon .sub__bar i { background: var(--warn); }
 .sub__note { color: var(--muted-dark); }
+.sub__note--activating { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; color: #f5f5f7; }
+.sub__spinner { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid rgb(255 255 255 / 0.25); border-top-color: #2997ff; animation: sub-spin 0.9s linear infinite; }
+@keyframes sub-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sub__spinner { animation-duration: 3s; } }
 .sub__actions:empty { display: none; }
 
 .extend { display: grid; gap: 12px; padding: 26px; border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow); }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatGBP } from '#shared/money'
+import { canLearn, type SubscriptionState } from '#shared/types/billing'
 
 // Stripe sends the learner here after paying. The order turns paid only when Stripe's webhook reaches
 // the backend (usually a second or two), so we poll until then.
@@ -38,9 +39,8 @@ const activating = ref(false)
 async function waitForAccess() {
   activating.value = true
   for (let i = 0; i < 60; i++) { // up to ~2 minutes: the backend has been seen granting access a minute after "paid"
-    const acct = await $fetch<{ subscription: { state: string } | null }>('/api/account').catch(() => null)
-    const state = acct?.subscription?.state
-    if (state === 'active' || state === 'ends_soon') {
+    const acct = await $fetch<{ subscription: { state: SubscriptionState } | null }>('/api/account').catch(() => null)
+    if (canLearn(acct?.subscription?.state)) {
       toast.show('Payment successful! Your access is active.')
       return navigateTo('/account', { replace: true })
     }

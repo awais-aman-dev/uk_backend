@@ -1,4 +1,4 @@
-import { ENDS_SOON_DAYS, type SubscriptionDto } from '#shared/types/billing'
+import { ENDS_SOON_DAYS, SUB, type SubscriptionDto, type SubscriptionState } from '#shared/types/billing'
 import type { DjangoSubscription } from './session'
 
 const DAY = 86_400_000
@@ -16,6 +16,13 @@ export function subscriptionFromDjango(sub: DjangoSubscription | null): Subscrip
     startsAt: sub.purchase_date ?? endsAt.toISOString(),
     endsAt: endsAt.toISOString(),
     daysLeft,
-    state: !sub.online_platform_activated || msLeft <= 0 ? 'expired' : daysLeft <= ENDS_SOON_DAYS ? 'ends_soon' : 'active'
+    state: stateOf(msLeft, daysLeft, sub.online_platform_activated)
   }
+}
+
+/** "Expired" only once the end date has passed; before that, access not switched on yet means it's being activated. */
+function stateOf(msLeft: number, daysLeft: number, activated: boolean): SubscriptionState {
+  if (msLeft <= 0) return SUB.EXPIRED
+  if (!activated) return SUB.ACTIVATING
+  return daysLeft <= ENDS_SOON_DAYS ? SUB.ENDS_SOON : SUB.ACTIVE
 }

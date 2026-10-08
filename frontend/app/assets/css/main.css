@@ -268,6 +268,9 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 }
 .btn:hover { text-decoration: none; transform: scale(1.02); }
 .btn:active { transform: scale(0.97); }
+/* disabled: dimmed and inert (no hover lift) */
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; transform: none; }
+.btn:disabled:hover .arrow { transform: none; }
 .btn--primary { --btn-bg: var(--accent); --btn-fg: #fff; }
 .btn--primary:hover { --btn-bg: var(--accent-hover); box-shadow: 0 8px 24px -6px rgb(0 113 227 / 0.5); }
 .btn--ghost { --btn-bg: rgb(0 0 0 / 0.05); --btn-fg: var(--ink); }
