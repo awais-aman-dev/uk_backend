@@ -22,7 +22,8 @@ const ink = computed(() => (props.spec.fill === '#fff' ? '#1d1d1f' : '#fff'))
 
 
 const symbol = computed(() => SIGN_SYMBOLS[props.spec.symbol] ?? '')
-const isText = computed(() => props.spec.symbol === 'text' || props.spec.symbol === 'P' || props.spec.symbol === 'H')
+// text on the sign: our 'text' symbol, P / H, or (Django) a `text` with no symbol at all — the guide says `symbol` exists only on some signs
+const isText = computed(() => props.spec.symbol === 'text' || props.spec.symbol === 'P' || props.spec.symbol === 'H' || (!props.spec.symbol && !!props.spec.text))
 const text = computed(() => (props.spec.symbol === 'P' || props.spec.symbol === 'H' ? props.spec.symbol : props.spec.text ?? ''))
 
 // Django's sign `spec` is open-ended (Learning API guide §7): a shape we can't draw falls back to the sign's name
