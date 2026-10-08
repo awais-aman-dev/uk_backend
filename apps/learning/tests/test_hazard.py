@@ -391,8 +391,18 @@ class TestTheAdmin:
         """Staff should not have to work the bands out in their head."""
         page = editor_client.get(reverse("admin:learning_hazardclip_change", args=[clip.pk])).content.decode()
 
-        assert "10.0s–11.0s = 5" in page
-        assert "14.0s–15.0s = 1" in page
+        assert "10.0–11.0s" in page
+        assert "14.0–15.0s" in page
+        # Every band, first to last, not just the ones that happened to fit on the row.
+        assert page.count('class="adm-band"') == HazardWindow.BANDS
+
+    def test_the_bands_are_separate_so_the_row_can_wrap(self, editor_client, clip):
+        """Five bands as one run of text could not break, and pushed the inline table off the
+        right of the page where the last of them could not be read at all."""
+        page = editor_client.get(reverse("admin:learning_hazardclip_change", args=[clip.pk])).content.decode()
+
+        assert 'class="adm-bands"' in page
+        assert "10.0s–11.0s = 5" not in page
 
     def test_the_list_shows_how_many_hazards_and_the_top_score(self, editor_client, clip):
         page = editor_client.get(reverse("admin:learning_hazardclip_changelist")).content.decode()

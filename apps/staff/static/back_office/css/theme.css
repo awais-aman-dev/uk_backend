@@ -1019,6 +1019,53 @@ table#result_list,
     color: var(--adm-ink-subtle);
 }
 
+/* --- Scoring bands, shown beside a hazard window ---------------------------------------------- */
+/* Each band is its own chip so the set wraps. As one run of text it could not break, and the row
+   pushed the whole inline table off the right of the page. */
+
+.adm-bands {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    white-space: normal;
+}
+
+.adm-band {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px 2px 8px;
+    border: 1px solid var(--adm-border);
+    border-radius: 999px;
+    background: var(--adm-surface);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.adm-band-time {
+    color: var(--adm-ink-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.adm-band-score {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--adm-primary-soft);
+    color: var(--adm-primary-dark);
+    font-weight: 600;
+    text-align: center;
+}
+
+/* --- Tabular inlines ------------------------------------------------------------------------- */
+/* A wide inline scrolls within its own box rather than stretching the page, so the change form
+   never gains a horizontal scrollbar of its own. */
+
+.inline-group .inline-related > fieldset {
+    overflow-x: auto;
+}
+
 .adm-badge {
     display: inline-flex;
     align-items: center;
