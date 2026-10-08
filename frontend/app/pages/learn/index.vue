@@ -4,7 +4,7 @@ useHead({ title: 'Today — 1Theory' })
 
 const user = useAuthUser()
 const toast = useToast()
-const { data: raw, refresh } = await useFetch('/api/learn/overview')
+const { data: raw, refresh } = await useFetch('/api/learn/overview', { lazy: true })
 // Django mode: the dashboard is Django's own topics + progress; otherwise our local "Today"
 const dashboard = computed(() => (raw.value?.source === 'django' ? raw.value : null))
 const data = computed(() => (raw.value?.source === 'local' ? raw.value : null))
@@ -43,7 +43,8 @@ const actions = computed(() => [
 </script>
 
 <template>
-  <LearnDjangoDashboard v-if="dashboard" :dashboard="dashboard" :title="`${greeting}, ${firstName}.`" />
+  <LearnSkeleton v-if="!raw" variant="dashboard" />
+  <LearnDjangoDashboard v-else-if="dashboard" :dashboard="dashboard" :title="`${greeting}, ${firstName}.`" />
   <div v-else-if="data" class="today">
     <LearnHead :eyebrow="new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' }).format(new Date())" :title="`${greeting}, ${firstName}.`" />
 

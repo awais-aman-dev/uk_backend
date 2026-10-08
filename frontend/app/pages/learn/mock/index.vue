@@ -2,7 +2,7 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Mock test — 1Theory' })
 
-const { data: raw, error: loadError } = await useFetch('/api/learn/mock')
+const { data: raw, error: loadError } = await useFetch('/api/learn/mock', { lazy: true })
 // Django mode: Django's exams (Learning API guide §13) instead of our own mock test
 const exams = computed(() => (raw.value?.source === 'django' ? raw.value.exams : null))
 const data = computed(() => (raw.value?.source === 'local' ? raw.value : null))
@@ -34,6 +34,7 @@ const best = computed(() => Math.max(0, ...finished.value.map((a) => a.score ?? 
 
 <template>
   <LearnLocked v-if="loadError?.statusCode === 402" />
+  <LearnSkeleton v-else-if="!raw && !loadError" variant="list" />
   <div v-else-if="exams">
     <LearnHead eyebrow="Exams" title="The real thing, rehearsed." sub="Answer every question, then submit once — your score and a full review come straight after." />
     <p v-if="!exams.length" class="empty">No exams are available on your plan yet.</p>

@@ -3,7 +3,7 @@ definePageMeta({ layout: 'learn', middleware: 'auth' })
 
 const route = useRoute()
 const toast = useToast()
-const { data, error, refresh } = await useFetch(() => `/api/learn/lessons/${route.params.slug}`)
+const { data, error, refresh } = await useFetch(() => `/api/learn/lessons/${route.params.slug}`, { lazy: true })
 useSignedUrlRefresh(refresh) // signed video/document URLs from Django expire after ~1 h
 useHead({ title: () => `${data.value?.lesson.title ?? 'Lesson'} — 1Theory` })
 
@@ -38,7 +38,8 @@ async function complete() {
     <div class="readbar" :style="{ transform: `scaleX(${progress})` }" aria-hidden="true" />
     <LearnLocked v-if="error?.statusCode === 402" />
     <UiAlert v-else-if="error">Lesson not found. <NuxtLink to="/learn/lessons">All lessons</NuxtLink></UiAlert>
-    <article v-else-if="data" class="lesson">
+    <LearnSkeleton v-else-if="!data" variant="article" class="lesson" />
+    <article v-else class="lesson">
       <BackButton fallback="/learn/lessons" label="Lessons" />
       <header class="lesson__head">
         <p class="lesson__topic"><AppIcon :name="data.topic.icon" :size="16" /> {{ data.topic.title }} · {{ data.lesson.minutes }} min</p>

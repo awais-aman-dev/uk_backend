@@ -2,13 +2,14 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Lessons — 1Theory' })
 
-const { data } = await useFetch('/api/learn/topics')
+const { data } = await useFetch('/api/learn/topics', { lazy: true })
 const done = computed(() => data.value?.topics.reduce((s, t) => s + t.lessons.filter((l) => l.done).length, 0) ?? 0)
 const total = computed(() => data.value?.topics.reduce((s, t) => s + t.lessons.length, 0) ?? 0)
 </script>
 
 <template>
-  <div v-if="data">
+  <LearnSkeleton v-if="!data" variant="list" />
+  <div v-else>
     <LearnHead eyebrow="Lessons" title="Learn it properly." :sub="`${done} of ${total} lessons complete. Each one takes a few minutes and ends with a quick check.`">
       <NuxtLink to="/learn/practice" class="btn btn--ghost">Practise instead</NuxtLink>
     </LearnHead>

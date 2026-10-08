@@ -2,7 +2,7 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Hazard perception — 1Theory' })
 
-const { data, error } = await useFetch('/api/learn/hazard')
+const { data, error } = await useFetch('/api/learn/hazard', { lazy: true })
 
 const total = computed(() => (data.value?.clips ?? []).reduce((s, c) => s + (c.best ?? 0), 0))
 const max = computed(() => (data.value?.clips ?? []).reduce((s, c) => s + c.maxScore, 0))
@@ -12,6 +12,7 @@ const lightingLabel = { day: 'Daytime', dusk: 'Dusk', night: 'Night' } as const
 
 <template>
   <LearnLocked v-if="error?.statusCode === 402" />
+  <LearnSkeleton v-else-if="!data && !error" variant="list" />
   <div v-else-if="data">
     <LearnHead eyebrow="Hazard perception" title="Spot it early." sub="Each clip is filmed from the driver’s seat. Click as soon as you see a hazard starting to develop — the earlier, the higher your score.">
       <div class="total">

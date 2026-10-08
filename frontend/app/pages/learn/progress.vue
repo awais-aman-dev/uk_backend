@@ -2,16 +2,15 @@
 definePageMeta({ layout: 'learn', middleware: 'auth' })
 useHead({ title: 'Progress — 1Theory' })
 
-const { data: raw } = await useFetch('/api/learn/progress')
+const { data: raw } = await useFetch('/api/learn/progress', { lazy: true })
 // Django mode: Django's progress + topics only (Learning API guide, Flow A); otherwise our local statistics
 const dashboard = computed(() => (raw.value?.source === 'django' ? raw.value : null))
 const data = computed(() => (raw.value?.source === 'local' ? raw.value : null))
-const local = !dashboard.value
-const [{ data: topics }, { data: mocks }, { data: hazard }] = await Promise.all([
-  useFetch('/api/learn/topics', { immediate: local }),
-  useFetch('/api/learn/mock', { immediate: local }),
-  useFetch('/api/learn/hazard', { immediate: local })
-])
+// our own statistics need three more lists — fetched only once we know the page is local
+const { data: topics, execute: loadTopics } = useFetch('/api/learn/topics', { immediate: false })
+const { data: mocks, execute: loadMocks } = useFetch('/api/learn/mock', { immediate: false })
+const { data: hazard, execute: loadHazard } = useFetch('/api/learn/hazard', { immediate: false })
+watch(data, (d) => d && Promise.all([loadTopics(), loadMocks(), loadHazard()]), { immediate: true })
 const level = (n: number) => (n === 0 ? 0 : n < 5 ? 1 : n < 15 ? 2 : n < 30 ? 3 : 4)
 const weeks = computed(() => {
   const cal = data.value?.calendar ?? []
@@ -22,7 +21,8 @@ const hours = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `$
 </script>
 
 <template>
-  <LearnDjangoDashboard v-if="dashboard" :dashboard="dashboard" title="Your progress" variant="progress" />
+  <LearnSkeleton v-if="!raw" variant="dashboard" />
+  <LearnDjangoDashboard v-else-if="dashboard" :dashboard="dashboard" title="Your progress" variant="progress" />
   <div v-else-if="data">
     <LearnHead eyebrow="Progress" title="How you’re doing." />
 

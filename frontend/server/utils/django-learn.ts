@@ -20,7 +20,7 @@ export async function useDjangoLearning(event: H3Event): Promise<boolean> {
   const user = await getSessionUser(event)
   if (!user) return decided?.django ?? false // can't ask without a session; keep the last answer
   try {
-    const res = await djangoFetch<{ topics?: unknown[] }>(event, 'GET', '/api/learn/topics/', { auth: true })
+    const res = await djangoTopics(event)
     // A failed check (Render waking up, a 5xx) keeps the last answer, so the site doesn't flip to our material
     if (res.ok) decided = { at: Date.now(), django: (res.data.topics?.length ?? 0) > 0 }
     else decided = { at: Date.now(), django: decided?.django ?? false }
@@ -31,12 +31,27 @@ export async function useDjangoLearning(event: H3Event): Promise<boolean> {
 }
 
 /**
+ * GET /api/learn/topics/ once per request: the source check above and the topics / dashboard handlers share it
+ * (Django takes a few seconds to answer it).
+ */
+function djangoTopics(event: H3Event) {
+  event.context.djangoTopics ??= djangoFetch<{ topics?: DjangoTopic[] }>(event, 'GET', '/api/learn/topics/', { auth: true })
+  return event.context.djangoTopics
+}
+
+declare module 'h3' {
+  interface H3EventContext {
+    djangoTopics?: Promise<DjangoResponse<{ topics?: DjangoTopic[] }>>
+  }
+}
+
+/**
  * The learning dashboard straight from Django — the guide's Flow A: GET /api/learn/topics/ + GET /api/learn/progress/.
  * Neither needs a plan; nothing is computed here beyond what Django sends.
  */
 export async function djangoDashboard(event: H3Event): Promise<DjangoDashboard> {
   const [topics, progress, access] = await Promise.all([
-    djangoFetch<{ topics?: DjangoTopic[] }>(event, 'GET', '/api/learn/topics/', { auth: true }),
+    djangoTopics(event),
     djangoFetch<DjangoProgress>(event, 'GET', '/api/learn/progress/', { auth: true }),
     hasAccess(event)
   ])
@@ -107,7 +122,9 @@ async function fillSigns(event: H3Event, data: Record<string, unknown>) {
  * written as `if (django) return djangoLearn(…)` keeps the response type of its local branch for the pages.
  */
 export async function djangoLearn<T = never>(event: H3Event, method: string, path: string, body?: unknown): Promise<T> {
-  let res = await djangoFetch<T>(event, method, path, { auth: true, body })
+  let res = method === 'GET' && path === '/api/learn/topics/'
+    ? ((await djangoTopics(event)) as unknown as DjangoResponse<T>)
+    : await djangoFetch<T>(event, method, path, { auth: true, body })
   // 429: back off and retry once (guide §18); a 429 means Django didn't process the request
   if (res.status === 429) {
     await new Promise((r) => setTimeout(r, RETRY_AFTER_MS))
