@@ -11,7 +11,7 @@ than in the admin screens.
 import logging
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.core import audit
@@ -558,6 +558,41 @@ def saved_question_keys(student) -> list[str]:
     return list(SavedQuestion.objects.filter(student=student).values_list("question__key", flat=True))
 
 
+def mastery_by_chapter(student, chapters) -> dict[int, dict]:
+    """:func:`mastery_of` for several chapters at once, in two queries instead of two per chapter.
+
+    Listing the whole course asked the database twice per chapter, which is most of what made
+    that page slow — the queries are each tiny, but the database is on the other side of the
+    internet, so the round trips are the cost.
+
+    Returns the same ``{"mastery": int, "questions": int}`` shape as :func:`mastery_of`, keyed by
+    chapter id, with an entry for every chapter asked about including those with no questions.
+    """
+    chapter_ids = [chapter.pk for chapter in chapters]
+    if not chapter_ids:
+        return {}
+
+    totals = dict(
+        live(Question.objects.filter(chapter_id__in=chapter_ids)).values_list("chapter_id").annotate(total=Count("id"))
+    )
+
+    # Distinct because a question answered correctly five times is one question learnt, which is
+    # the whole point of counting questions rather than attempts.
+    learnt = dict(
+        QuestionAttempt.objects.filter(student=student, was_correct=True, question__chapter_id__in=chapter_ids)
+        .values_list("question__chapter_id")
+        .annotate(learnt=Count("question_id", distinct=True))
+    )
+
+    return {chapter_id: _mastery(learnt.get(chapter_id, 0), totals.get(chapter_id, 0)) for chapter_id in chapter_ids}
+
+
+def _mastery(learnt: int, total: int) -> dict:
+    if not total:
+        return {"mastery": 0, "questions": 0}
+    return {"mastery": round(learnt * 100 / total), "questions": total}
+
+
 def mastery_of(student, chapter: Chapter) -> dict:
     """How much of a chapter's question bank the student has got right at least once.
 
@@ -575,7 +610,7 @@ def mastery_of(student, chapter: Chapter) -> dict:
         .distinct()
         .count()
     )
-    return {"mastery": round(learnt * 100 / total), "questions": total}
+    return _mastery(learnt, total)
 
 
 def study_days(student) -> list:
@@ -588,14 +623,14 @@ def study_days(student) -> list:
     return sorted(set(answered) | set(read), reverse=True)
 
 
-def streak(student, today=None) -> int:
+def streak(student, today=None, days=None) -> int:
     """How many days in a row up to today the student has studied.
 
     Today not being used yet does not break the streak — it is only broken by a day that has
     passed with nothing in it — so the number does not drop to zero overnight.
     """
     today = today or timezone.localdate()
-    days = study_days(student)
+    days = study_days(student) if days is None else days
     if not days:
         return 0
 
@@ -654,7 +689,8 @@ def progress_summary(student) -> dict:
     best_clip = clips.order_by("-score").first()
 
     return {
-        "streak": streak(student),
+        # The days are already in hand, so the streak does not go and fetch them again.
+        "streak": streak(student, days=days),
         "studyDays": len(days),
         "lastStudiedOn": days[0] if days else None,
         "questionsAnswered": answered,

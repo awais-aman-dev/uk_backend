@@ -97,38 +97,65 @@ class TopicListView(APIView):
     )
     def get(self, request: Request) -> Response:
         student = cast(User, request.user)
+
+        # Asked once. Neither answer can change while this request is being served, and asking
+        # per chapter is what made the whole course take seconds to list.
+        has_access = entitlements.has_access(student)
+        package_id = entitlements.package_of(student) if has_access else None
+
         chapters = services.live(Chapter.objects.all()).order_by("order", "title")
-        if entitlements.has_access(student):
+        if has_access:
             chapters = entitlements.visible_chapters(student, chapters)
+        chapters = list(chapters)
 
         done = services.completed_lesson_ids(student)
-        topics = []
-        for chapter in chapters:
-            subchapters = services.live_subchapters_of(chapter).order_by("order", "title")
-            if entitlements.has_access(student):
-                subchapters = entitlements.visible_subchapters(student, subchapters)
+        mastery = services.mastery_by_chapter(student, chapters)
+        lessons = self._lessons_by_chapter(student, chapters, has_access, package_id)
 
-            topics.append(
-                {
-                    "slug": chapter.slug,
-                    "title": chapter.title,
-                    "description": chapter.description,
-                    "icon": chapter.icon,
-                    **services.mastery_of(student, chapter),
-                    "lessons": [
-                        {
-                            "slug": subchapter.slug,
-                            "title": subchapter.title,
-                            "summary": subchapter.summary,
-                            "minutes": subchapter.minutes,
-                            "done": subchapter.pk in done,
-                        }
-                        for subchapter in subchapters
-                    ],
-                }
-            )
+        return Response(
+            {
+                "topics": [
+                    {
+                        "slug": chapter.slug,
+                        "title": chapter.title,
+                        "description": chapter.description,
+                        "icon": chapter.icon,
+                        **mastery[chapter.pk],
+                        "lessons": [
+                            {
+                                "slug": subchapter.slug,
+                                "title": subchapter.title,
+                                "summary": subchapter.summary,
+                                "minutes": subchapter.minutes,
+                                "done": subchapter.pk in done,
+                            }
+                            for subchapter in lessons.get(chapter.pk, [])
+                        ],
+                    }
+                    for chapter in chapters
+                ]
+            }
+        )
 
-        return Response({"topics": topics})
+    def _lessons_by_chapter(self, student, chapters, has_access, package_id) -> dict[int, list]:
+        """Every listed chapter's live subchapters, in one query, grouped by chapter.
+
+        Fetching them a chapter at a time is correct but costs a round trip each, and the
+        database is not local to the web server.
+        """
+        if not chapters:
+            return {}
+
+        subchapters = services.live(Subchapter.objects.filter(chapter__in=chapters)).order_by(
+            "chapter_id", "order", "title"
+        )
+        if has_access:
+            subchapters = entitlements.visible_subchapters(student, subchapters, package_id=package_id)
+
+        grouped: dict[int, list] = {}
+        for subchapter in subchapters:
+            grouped.setdefault(subchapter.chapter_id, []).append(subchapter)
+        return grouped
 
 
 class LessonDetailView(APIView):

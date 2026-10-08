@@ -39,12 +39,20 @@ def handle_event(event: dict) -> None:
 
     session = event.get("data", {}).get("object", {})
 
-    if event_type == PAID_EVENT:
-        _mark_paid(session)
-    elif event_type in FAILED_EVENTS:
-        _mark_failed(session)
-    else:
-        logger.info("No action needed for Stripe event type %s", event_type)
+    # The event is recorded before the work, so two deliveries arriving at once cannot both act on
+    # it. That leaves the record claiming an event was handled if the work then fails, and Stripe's
+    # retry would be discarded as a duplicate — so a failure gives the claim back.
+    try:
+        if event_type == PAID_EVENT:
+            _mark_paid(session)
+        elif event_type in FAILED_EVENTS:
+            _mark_failed(session)
+        else:
+            logger.info("No action needed for Stripe event type %s", event_type)
+    except Exception:
+        logger.exception("Handling Stripe event %s failed; releasing it so Stripe can retry", event_id)
+        StripeEvent.objects.filter(event_id=event_id).delete()
+        raise
 
 
 def _order_id_from(session: dict) -> str:
@@ -97,24 +105,46 @@ def _mark_paid(session: dict) -> None:
 
     logger.info("Order %s is paid", order_id)
 
-    # Queued only once the transaction has committed, so the worker cannot read the order before
-    # the paid status is visible to it.
-    transaction.on_commit(lambda: _queue_fulfilment(str(order_id)))
+    # Run only once the transaction has committed, so fulfilment cannot read the order before the
+    # paid status is visible.
+    transaction.on_commit(lambda: _fulfil(str(order_id)))
 
 
-def _queue_fulfilment(order_id: str) -> None:
-    """Hand the paid order to a worker, falling back to doing it here if the queue is down.
+def _fulfil(order_id: str) -> None:
+    """Grant the access here, in the webhook, rather than queueing it.
 
-    The customer has paid, so the work has to happen either way; a slow webhook response is a far
-    smaller problem than a purchase that grants nothing.
+    This used to hand the order to a worker, because fulfilment waited on a mail server. It no
+    longer does: the emails are themselves queued, so what is left is a handful of database
+    writes. Queueing them bought nothing and cost a great deal — one solo-pool worker drains the
+    whole queue in order on the free plan, so granting access sat behind every registration and
+    welcome email ahead of it, each able to hold the queue for the length of an SMTP timeout. The
+    customer watched a spinner while the thing they had paid for waited its turn behind a mailshot.
+
+    Doing it here makes access live before Stripe is answered, so the storefront's first poll
+    after the redirect already sees it.
+
+    Both fallbacks remain, because the customer has paid and the work has to happen: the worker is
+    tried if this fails, and the sweeper finds the order either way.
     """
+    from apps.billing import fulfilment
     from apps.billing.tasks import fulfil_order
+
+    order = Order.objects.select_related("package").filter(pk=order_id).first()
+    if order is None:
+        logger.error("Cannot fulfil order %s, which no longer exists", order_id)
+        return
+
+    try:
+        fulfilment.fulfil(order)
+        return
+    except Exception:
+        logger.exception("Could not fulfil order %s in the webhook, handing it to the worker", order_id)
 
     try:
         fulfil_order.delay(order_id)
     except Exception:
-        logger.exception("Could not queue fulfilment for order %s, doing it now instead", order_id)
-        fulfil_order.apply(args=(order_id,))
+        # Never silent: without this the purchase would wait for the sweeper with nothing said.
+        logger.exception("Could not queue fulfilment for order %s either; it is left to the sweeper", order_id)
 
 
 def _mark_failed(session: dict) -> None:

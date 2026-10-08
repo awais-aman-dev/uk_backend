@@ -52,6 +52,10 @@ def package_of(user: User) -> int | None:
     return subscription.package_id if subscription else None
 
 
+#: Tells "no package was passed" apart from "the student is on no package", which is a real value.
+_UNSET = object()
+
+
 def _allows(package_id: int | None, prefix: str = "") -> Q:
     """Material is allowed when it lists no packages, or lists the one the student is on.
 
@@ -111,11 +115,18 @@ def visible_content(user: User, queryset, at=None):
     ).distinct()
 
 
-def visible_subchapters(user: User, queryset, at=None):
-    if not has_access(user, at):
-        return queryset.none()
+def visible_subchapters(user: User, queryset, at=None, package_id=_UNSET):
+    """Narrow subchapters to what this person may see.
 
-    package_id = package_of(user)
+    ``package_id`` can be passed by a caller that already knows it — listing a whole course
+    otherwise asked which package the student is on once per chapter, and the answer cannot
+    change within one request.
+    """
+    if package_id is _UNSET:
+        if not has_access(user, at):
+            return queryset.none()
+        package_id = package_of(user)
+
     return queryset.filter(_allows(package_id), _allows(package_id, "chapter__")).distinct()
 
 

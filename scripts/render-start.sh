@@ -66,9 +66,16 @@ else
 fi
 
 log "starting gunicorn on port ${PORT:-8000}"
+# Threads rather than more workers: 512 MB does not fit a second copy of Django, but threads
+# share one. Requests here wait on the database and on Stripe far more than they use the CPU, so
+# one worker that can only hold one request at a time serialises everything — the storefront
+# polling after a payment was enough to put Stripe's own webhook in a queue behind it, which
+# delayed the very access it was polling for.
 gunicorn config.wsgi:application \
     --bind "0.0.0.0:${PORT:-8000}" \
     --workers "${WEB_CONCURRENCY:-1}" \
+    --worker-class gthread \
+    --threads "${WEB_THREADS:-8}" \
     --timeout 60 \
     --access-logfile - \
     --error-logfile - &
