@@ -43,7 +43,7 @@ from apps.learning.models import (
     Sign,
     Subchapter,
 )
-from apps.staff.admin import badge, placeholder
+from apps.staff.admin import PermissionRequiredAdminMixin, badge, placeholder
 
 STATUS_TONES = {PublishStatus.PUBLISHED: "success", PublishStatus.DRAFT: "neutral"}
 
@@ -89,8 +89,15 @@ class ContentForm(forms.ModelForm):
         ]
 
 
-class PublishableAdmin(admin.ModelAdmin):
-    """Shared behaviour for anything students only see once it is published."""
+class PublishableAdmin(PermissionRequiredAdminMixin, admin.ModelAdmin):
+    """Shared behaviour for anything students only see once it is published.
+
+    Gated on permissions that were actually granted, as the rest of the back office already is:
+    being a superuser is not by itself a way into the course material, and the whole Learning
+    section stays out of the menu until somebody is given the Online learning materials role.
+    Someone who administers the system can still grant themselves that role — least privilege by
+    default, not a wall.
+    """
 
     actions = ["publish_selected", "unpublish_selected"]
 
@@ -369,7 +376,7 @@ class LearningContentAdmin(PreviewMixin, PublishableAdmin):
 
 
 @admin.register(Sign)
-class SignAdmin(admin.ModelAdmin):
+class SignAdmin(PermissionRequiredAdminMixin, admin.ModelAdmin):
     """Road signs. Stored as drawing instructions, so there is no image to upload."""
 
     list_display = ["name", "code", "category", "order"]
@@ -480,8 +487,12 @@ class PracticeExamAdmin(PublishableAdmin):
 # answer "how is this student getting on", and nothing good comes of editing somebody's history.
 
 
-class ReadOnlyAdmin(admin.ModelAdmin):
-    """Shows records without offering a way to change them."""
+class ReadOnlyAdmin(PermissionRequiredAdminMixin, admin.ModelAdmin):
+    """Shows records without offering a way to change them.
+
+    These are students' own work — attempts, progress, saved questions — so viewing them is
+    granted on purpose too, exactly as it is for the material itself.
+    """
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
@@ -532,7 +543,7 @@ class SavedQuestionAdmin(ReadOnlyAdmin):
 
 
 @admin.register(MediaAsset)
-class MediaAssetAdmin(admin.ModelAdmin):
+class MediaAssetAdmin(PermissionRequiredAdminMixin, admin.ModelAdmin):
     """The media library: files staff have uploaded, used by reference from content.
 
     Uploads go through here rather than straight from the browser to the bucket, so the bucket's
@@ -596,22 +607,30 @@ class HazardWindowInline(admin.TabularInline):
     ordering = ["starts_at"]
 
     @admin.display(description="Scores 5 → 1 across")
-    def bands(self, window: HazardWindow) -> str:
-        """Spells out the five bands, so staff can see what each second is worth."""
+    def bands(self, window: HazardWindow) -> SafeString:
+        """Spells out the five bands, so staff can see what each second is worth.
+
+        One band to a chip rather than a single run of text joined by separators. Five bands is
+        roughly ninety characters, which a table cell will not break mid-word, so the row grew
+        wider than the page and the last bands were simply unreachable off the right edge.
+        Chips wrap onto as many lines as the column is wide enough for.
+        """
         if window.pk is None or window.ends_at is None or window.starts_at is None:
             return placeholder()
 
         start, end = float(window.starts_at), float(window.ends_at)
         step = (end - start) / HazardWindow.BANDS
         edges = [start + step * band for band in range(HazardWindow.BANDS + 1)]
-        return format_html_join(
-            mark_safe(" · "),  # noqa: S308  # a separator we wrote, not user input
-            "{}s–{}s = {}",
+        chips = format_html_join(
+            "",
+            '<span class="adm-band"><span class="adm-band-time">{}–{}s</span>'
+            '<span class="adm-band-score">{}</span></span>',
             (
                 (f"{edges[band]:.1f}", f"{edges[band + 1]:.1f}", HazardWindow.BANDS - band)
                 for band in range(HazardWindow.BANDS)
             ),
         )
+        return format_html('<span class="adm-bands">{}</span>', chips)
 
 
 @admin.register(HazardClip)
