@@ -189,6 +189,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.entitlements.tasks.expire_accounts",
         "schedule": crontab(hour="0", minute="30"),
     },
+    # Often, because what it catches is somebody who has paid and been given nothing. It is one
+    # indexed query when there is nothing to do.
+    "fulfil-unfulfilled-orders": {
+        "task": "apps.billing.tasks.fulfil_unfulfilled_orders",
+        "schedule": crontab(minute="*/10"),
+    },
 }
 
 # --- Learning ------------------------------------------------------------------------------------
